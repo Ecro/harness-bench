@@ -15,6 +15,37 @@
 
 ---
 
+## The vocabulary in this write-up
+
+The study measured review as **two separate roles**, and that split is the backbone of
+everything below.
+
+```text
+reviewer   reads the code and reports problems. Never touches the code
+fixer      takes those reports and actually edits the code. May decline
+```
+
+| term | meaning |
+|---|---|
+| **finding** | one item a reviewer reported. Whether it is real is a separate question |
+| **false positive** | a finding reported as a defect that is not one |
+| **distinct / raw findings** | the count after findings naming the same problem are grouped / the total before grouping |
+| **call** | one model invocation. The unit of cost |
+| **round / loop** | one review→fix pass is a round; repeating that pass several times is a loop |
+| **contract** | the specification pinning what the code must do, and the tests that check it |
+| **compliance** | how much of that contract holds. `19/19` and `23/23` mean every criterion and every test passed |
+| **public surface** | the parts other code depends on — names, signatures, documented behaviour |
+| **file-only / repo access** | the reviewer is given the target file alone / the source tree is mounted read-only |
+| **precision / recall** | the share of reported findings that were real / the share of existing defects that were found |
+| **churn** | lines added and deleted in a round. *How much was touched*, not a quality measure |
+| **decline rate** | the share of handed-over findings the fixer refused to apply, with a stated reason |
+| **fan-out** | splitting one reviewer into several specialists instead of asking one to cover everything |
+
+Terms that appear only once — ARI, mutation testing, differential testing, the null
+distribution, the canary — are explained where they first appear.
+
+---
+
 ## The conclusions first
 
 The study began with one question: **how many times do you have to run an AI code review before
