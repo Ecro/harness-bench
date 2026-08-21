@@ -1,6 +1,6 @@
 # 그래서 리뷰를 어떻게 해야 하는가
 
-[English](PRESCRIPTION.md) · 장문 서사: [`STUDY-ko-rewrite.md`](STUDY-ko-rewrite.md)
+[English](PRESCRIPTION.md) · 장문 서사: [`STUDY-ko.md`](STUDY-ko.md)
 
 측정이 뒷받침하는 레시피. 모든 줄에 근거를 병기한다. 숫자는
 [`FINDINGS.md`](FINDINGS.md), 이것으로 주장할 수 없는 것은 [`LIMITS.ko.md`](LIMITS.ko.md).

@@ -1,6 +1,6 @@
 # 발견
 
-[English](FINDINGS.md) · 장문 서사: [`STUDY-ko-rewrite.md`](STUDY-ko-rewrite.md)
+[English](FINDINGS.md) · 장문 서사: [`STUDY-ko.md`](STUDY-ko.md)
 
 이 벤치가 파생된 연구와 벤치 자신에서 측정된 전부. 숫자마다 그것을 낸 티어를 병기한다.
 

@@ -1,6 +1,6 @@
 # So how should you review?
 
-[한국어](PRESCRIPTION.ko.md) · long-form (Korean): [`STUDY-ko-rewrite.md`](STUDY-ko-rewrite.md)
+[한국어](PRESCRIPTION.ko.md) · long-form: [`STUDY.md`](STUDY.md)
 
 The recipe the measurements support. Every line carries the evidence behind it; see
 [`FINDINGS.md`](FINDINGS.md) for the numbers and [`LIMITS.md`](LIMITS.md) for what none of
