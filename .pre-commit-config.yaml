@@ -1,0 +1,19 @@
+# The secret scanner lived only in .git/hooks, which does not travel with a clone --
+# so a new contributor had two layers of protection where the documentation claims three.
+# This file makes the third layer install with `pre-commit install`.
+repos:
+  - repo: local
+    hooks:
+      - id: secret-scan
+        name: secret scan (staged)
+        entry: ./tools/secret_scan.sh staged
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      - id: boundary-and-reproduction
+        name: boundary + reproduction gates
+        entry: python -m pytest -q
+        language: system
+        pass_filenames: false
+        always_run: true

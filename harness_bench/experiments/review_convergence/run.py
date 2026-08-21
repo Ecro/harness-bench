@@ -20,6 +20,7 @@ import json
 from pathlib import Path
 
 from ...core.config import CONFIG
+from ...core.provenance import stamp
 from ...core.ledger.profile import Profile, Trait
 from ...core.runner.adapters import REGISTRY
 from ...core.runner.call import call, save
@@ -192,11 +193,15 @@ def measure(adapter_name: str, task_slug: str = "retry_policy", *,
         "finds_per_call": T("finds_per_call", None, note="tier-2 only (needs an adjudicated defect set)"),
         "verbosity_shift": T("verbosity_shift", None, note="tier-2 only (needs a repo-access contrast)"),
     }
+    prov = stamp([task.spec, task.suite] + ([task.reference] if task.reference else []))
     return Profile(
         adapter_name, next((c.model_version for c in ok if c.model_version), None),
         f"review_convergence/{task_slug}", traits,
         exploratory=True,          # no pre-registration for this plan yet
         tools_blockable=adapter.tools_blockable,
+        bench_version=prov["bench_version"],
+        bench_commit=prov["bench_commit"],
+        task_digest=prov["task_digest"],
         total_calls=len(calls),
         total_cost_usd=round(sum(cost), 4) if cost else None,
         total_tokens=sum(toks) if toks else None,

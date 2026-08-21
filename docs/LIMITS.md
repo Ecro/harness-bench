@@ -69,6 +69,53 @@ six months ago and today cannot always be attributed to model change versus cond
 from the result file alone. Rows that can no longer be reproduced are marked `stale`, never
 deleted.
 
+## 12. Contamination — and why this benchmark's exposure differs
+
+`retry_policy` (exponential backoff, full jitter, a circuit breaker) and `ttl_cache`
+(TTL plus LRU) are **textbook patterns**. Every model measured here has almost certainly seen
+thousands of implementations of both during training. For a capability benchmark that would
+be disqualifying.
+
+It is not disqualifying here, for a structural reason: **this benchmark does not score whether
+a model can produce a correct implementation.** The implementation is given, and is verified
+correct before measurement begins — 23 of 23 acceptance tests, on a suite that was itself
+validated by deleting a guarantee and confirming it is caught.
+
+What is measured is the model's behaviour in a loop around code that is already correct:
+
+```
+how many findings it reports on correct code, and how that count varies run to run
+whether that count declines as rounds pass
+whether the edit size converges
+whether it grows or shrinks the code while applying findings
+what fraction of handed-over findings it rejects, and on what grounds
+```
+
+Familiarity with the subject makes those traits **easier** to elicit, not harder. A model that
+has never seen a circuit breaker would produce noise; the point is what a model does when it
+understands the code perfectly well and is asked to review it anyway.
+
+Three things follow, and they bound the claim rather than dissolving it:
+
+**Absolute finding counts are not comparable across tasks.** A familiar subject invites more
+confident commentary. Counts are compared between arms **on the same task**, never between
+tasks.
+
+**A model trained on this repository would be contaminated in the way that matters.** The
+frozen suites, the reference implementation and the results are public. A future model could
+have memorised which findings this study adjudicated as false. The `task_digest` in every
+result exists partly for this: it identifies exactly which task bytes a measurement used, so a
+later re-measurement on the same digest can be checked against an earlier one.
+
+**Tier-2 case studies use a private codebase.** The firmware module measured there was not
+public when the study ran, which is the one place in this work where contamination is
+constrained by construction rather than by argument — and also the place where the adjudication
+is the author's, so it trades one weakness for another.
+
+> Contamination is not neutralised here. It is **redirected**: from "does the model know this
+> problem" — where it would be fatal — to "does the model behave the same way once it does",
+> which is the actual question.
+
 ---
 
 ## Questions this benchmark does not answer

@@ -12,9 +12,30 @@ jobs:
       - uses: actions/setup-python@v5
         with: { python-version: "3.11" }
       - run: pip install -e ".[dev]"
-      # 경계 + 재현 게이트. 둘 다 LLM 을 부르지 않으므로 CI 에서 완전히 돈다 —
-      # 재현 게이트가 모델을 부른다면 그건 재현이 아니라 새 실험이다.
+      # The boundary and reproduction gates call no model, so CI runs them in full.
+      # A reproduction gate that called a model would not be reproducing anything.
       - run: pytest -q
+      # The README opens with `bench canary`. Without a console-script entry point that is
+      # `command not found` on a fresh install -- the worst possible first impression, and
+      # invisible to every other check here.
+      - name: entry point is installed and runnable
+        run: |
+          bench --help > /dev/null
+          bench canary --help > /dev/null
+      - name: results conform to the published schema
+        run: |
+          python - <<'PY'
+          import json, glob, sys
+          schema = json.load(open("results/schema.json"))
+          req, props = schema["required"], set(schema["properties"])
+          bad = []
+          for f in glob.glob("results/*/*.json"):
+              d = json.load(open(f))
+              bad += [f"{f}: missing {k}" for k in req if k not in d]
+              bad += [f"{f}: unknown {k}" for k in d if k not in props]
+          print("\n".join(bad) or "all results conform")
+          sys.exit(1 if bad else 0)
+          PY
 
   oracle:
     # 오라클이 무엇을 보증하는지 검증한다. 원 연구의 1부는 오라클을 도입하고 이것을

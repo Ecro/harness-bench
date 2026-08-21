@@ -63,6 +63,9 @@ class Profile:
     exploratory: bool = False
     prereg_sha256: str | None = None
     tools_blockable: bool | None = None
+    bench_version: str | None = None
+    bench_commit: str | None = None
+    task_digest: str | None = None
     total_calls: int = 0
     total_cost_usd: float | None = None
     total_tokens: int | None = None
@@ -83,6 +86,11 @@ class Profile:
                        "in the same table as one that can is itself a confound")
         if self.total_cost_usd is None:
             out.append("COST-UNKNOWN -- usage was not reported (unknown, not zero)")
+        if self.bench_commit and self.bench_commit.endswith("-dirty"):
+            out.append("DIRTY-TREE -- measured against uncommitted changes; not reproducible "
+                       "from any published commit")
+        if self.task_digest is None:
+            out.append("TASK-DIGEST-MISSING -- cannot prove the tasks were unchanged")
         out += [f"DEGRADED:{k}" for k, t in self.traits.items() if t.degraded]
         return out
 

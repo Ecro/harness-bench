@@ -1,5 +1,16 @@
 # Contributing
 
+
+## Set up the hooks
+
+```bash
+pip install pre-commit && pre-commit install
+```
+
+The secret scanner and the gates run on every commit. `.git/hooks` does not travel with a
+clone, so without this step you have two layers of secret protection where the
+documentation claims three.
+
 ## Adding a model
 
 One `Adapter` in `harness_bench/core/runner/adapters.py`. **Five obligations:**

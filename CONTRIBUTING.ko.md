@@ -2,6 +2,16 @@
 
 [English](CONTRIBUTING.md)
 
+
+## 훅 설치
+
+```bash
+pip install pre-commit && pre-commit install
+```
+
+시크릿 스캐너와 게이트가 매 커밋마다 돈다. `.git/hooks` 는 클론에 따라가지 않으므로,
+이 단계를 건너뛰면 문서가 3중이라고 말하는 시크릿 방어가 실제로는 2중이다.
+
 ## 모델 추가
 
 `harness_bench/core/runner/adapters.py` 에 `Adapter` 하나. **의무 다섯 개:**
