@@ -1,0 +1,136 @@
+{
+  "v0": {
+    "file": "/home/noel/spoton/.worktrees/ai-review-convergence-experiment/tools/spec_first/data/claude_r0/retry_policy.py",
+    "mutants": 120,
+    "survivors": 16,
+    "observably_equivalent": 9,
+    "free_regions": 1,
+    "suite_hole_regions": 1,
+    "free_points": 3,
+    "suite_hole_points": 4,
+    "classes": [
+      {
+        "class": "FREE",
+        "signatures": [
+          "call[always_retryable]:fn_calls+outcome+state_after(half_open->open)",
+          "call[always_retryable]:fn_calls+sleeps+outcome(exc:RetryableA->exc:CircuitOpenError)",
+          "call[always_retryable]:fn_calls+sleeps+outcome+state_after(half_open->open)",
+          "call[always_retryable_b]:fn_calls+sleeps+outcome(exc:RetryableB->exc:CircuitOpenError)",
+          "call[always_retryable_b]:fn_calls+sleeps+outcome+state_after(half_open->open)",
+          "call[fail_then_ok]:fn_calls+outcome(exc:RetryableA->exc:CircuitOpenError)",
+          "call[fail_then_ok]:fn_calls+outcome+state_after(half_open->open)",
+          "call[fail_then_ok]:fn_calls+sleeps+outcome(exc:RetryableA->exc:CircuitOpenError)",
+          "call[fail_then_ok]:fn_calls+sleeps+outcome+state_after(closed->open)",
+          "call[fail_then_ok]:fn_calls+sleeps+outcome+state_after(half_open->open)",
+          "call[non_retryable]:fn_calls+outcome(exc:NotRetryable->exc:CircuitOpenError)",
+          "call[non_retryable]:fn_calls+outcome+state_after(half_open->open)",
+          "call[ok]:fn_calls+outcome+state_after(closed->open)",
+          "call[reentrant_fail]:fn_calls+outcome(exc:RetryableA->exc:CircuitOpenError)",
+          "call[reentrant_fail]:fn_calls+outcome+state_after(half_open->open)",
+          "call[reentrant_fail]:fn_calls+sleeps+outcome(exc:RetryableA->exc:CircuitOpenError)",
+          "call[reentrant_fail]:fn_calls+sleeps+outcome+state_after(half_open->open)",
+          "call[reentrant_ok]:fn_calls+outcome+state_after(closed->open)",
+          "state-property:half_open->open"
+        ],
+        "n_mutants": 3,
+        "max_diverged": 70,
+        "example": "('call', 'always_retryable', 3, 0, (), ('exc', 'CircuitOpenError'), 'open')"
+      },
+      {
+        "class": "SUITE-HOLE",
+        "signatures": [
+          "op-kind:advance->harness-error",
+          "op-kind:call->harness-error",
+          "op-kind:state->harness-error"
+        ],
+        "n_mutants": 4,
+        "max_diverged": 243,
+        "example": "('harness-error', 'ValueError', 'base_delay must be >= 0')"
+      }
+    ]
+  },
+  "claude-struct-L1R5": {
+    "file": "/home/noel/spoton/.worktrees/ai-review-convergence-experiment/tools/spec_first/data/structured/loop1/round5/retry_policy.py",
+    "mutants": 119,
+    "survivors": 15,
+    "observably_equivalent": 8,
+    "free_regions": 1,
+    "suite_hole_regions": 1,
+    "free_points": 3,
+    "suite_hole_points": 4,
+    "classes": [
+      {
+        "class": "FREE",
+        "signatures": [
+          "call[always_retryable]:fn_calls+outcome(exc:RetryableA->exc:CircuitOpenError)",
+          "call[always_retryable]:fn_calls+sleeps+outcome(exc:RetryableA->exc:CircuitOpenError)",
+          "call[always_retryable_b]:fn_calls+sleeps+outcome(exc:RetryableB->exc:CircuitOpenError)",
+          "call[fail_then_ok]:fn_calls+outcome(exc:RetryableA->exc:CircuitOpenError)",
+          "call[fail_then_ok]:fn_calls+sleeps+outcome(exc:RetryableA->exc:CircuitOpenError)",
+          "call[fail_then_ok]:fn_calls+sleeps+outcome+state_after(closed->open)",
+          "call[non_retryable]:fn_calls+outcome(exc:NotRetryable->exc:CircuitOpenError)",
+          "call[ok]:fn_calls+outcome+state_after(closed->open)",
+          "call[reentrant_fail]:fn_calls+outcome(exc:RetryableA->exc:CircuitOpenError)",
+          "call[reentrant_fail]:fn_calls+sleeps+outcome(exc:RetryableA->exc:CircuitOpenError)",
+          "call[reentrant_ok]:fn_calls+outcome+state_after(closed->open)"
+        ],
+        "n_mutants": 3,
+        "max_diverged": 67,
+        "example": "('call', 'always_retryable', 3, 0, (), ('exc', 'CircuitOpenError'), 'open')"
+      },
+      {
+        "class": "SUITE-HOLE",
+        "signatures": [
+          "op-kind:advance->harness-error",
+          "op-kind:call->harness-error",
+          "op-kind:state->harness-error"
+        ],
+        "n_mutants": 4,
+        "max_diverged": 243,
+        "example": "('harness-error', 'ValueError', 'base_delay must be >= 0')"
+      }
+    ]
+  },
+  "claude-bare-L1R5": {
+    "file": "/home/noel/spoton/.worktrees/ai-review-convergence-experiment/tools/spec_first/data/bare/loop1/round5/retry_policy.py",
+    "mutants": 126,
+    "survivors": 17,
+    "observably_equivalent": 8,
+    "free_regions": 1,
+    "suite_hole_regions": 1,
+    "free_points": 5,
+    "suite_hole_points": 4,
+    "classes": [
+      {
+        "class": "FREE",
+        "signatures": [
+          "call[always_retryable]:fn_calls+outcome(exc:RetryableA->exc:CircuitOpenError)",
+          "call[always_retryable]:fn_calls+sleeps+outcome(exc:RetryableA->exc:CircuitOpenError)",
+          "call[always_retryable_b]:fn_calls+sleeps+outcome(exc:RetryableB->exc:CircuitOpenError)",
+          "call[fail_then_ok]:fn_calls+outcome(exc:RetryableA->exc:CircuitOpenError)",
+          "call[fail_then_ok]:fn_calls+sleeps+outcome(exc:RetryableA->exc:CircuitOpenError)",
+          "call[fail_then_ok]:fn_calls+sleeps+outcome+state_after(closed->open)",
+          "call[non_retryable]:fn_calls+outcome(exc:NotRetryable->exc:CircuitOpenError)",
+          "call[ok]:fn_calls+outcome+state_after(closed->open)",
+          "call[reentrant_fail]:fn_calls+outcome(exc:RetryableA->exc:CircuitOpenError)",
+          "call[reentrant_fail]:fn_calls+sleeps+outcome(exc:RetryableA->exc:CircuitOpenError)",
+          "call[reentrant_ok]:fn_calls+outcome+state_after(closed->open)"
+        ],
+        "n_mutants": 5,
+        "max_diverged": 67,
+        "example": "('call', 'always_retryable', 3, 0, (), ('exc', 'CircuitOpenError'), 'open')"
+      },
+      {
+        "class": "SUITE-HOLE",
+        "signatures": [
+          "op-kind:advance->harness-error",
+          "op-kind:call->harness-error",
+          "op-kind:state->harness-error"
+        ],
+        "n_mutants": 4,
+        "max_diverged": 243,
+        "example": "('harness-error', 'ValueError', 'base_delay must be >= 0')"
+      }
+    ]
+  }
+}

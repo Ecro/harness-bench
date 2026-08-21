@@ -1,0 +1,21 @@
+---
+
+The specification above is the contract. The Python module above implements it.
+
+Improve this module's compliance with the specification.
+
+No reviewer findings are supplied. Decide for yourself what, if anything, to change.
+
+Constraints:
+
+- The public contract is FIXED. The constructor signature, the method and property names, and
+  the documented behaviour must stay exactly as the specification states.
+- Standard library only. Single file.
+- If nothing needs changing, return the module unchanged and say so. That is a normal outcome.
+
+Output STRICTLY this JSON and nothing else -- no prose before it, no code fence around it:
+
+{
+  "decisions": [{"index": 0, "action": "accepted" | "rejected", "reason": "<what you changed, or why you changed nothing>"}],
+  "code": "<the COMPLETE resulting contents of retry_policy.py, from first line to last>"
+}

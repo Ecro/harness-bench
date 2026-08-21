@@ -1,0 +1,26 @@
+---
+
+The Python module above is the code under review. A reviewer reported the findings listed below
+against it.
+
+Decide what to do about each finding, then produce the resulting module.
+
+Constraints:
+- Standard library only. Single file.
+- Do not rewrite code the findings did not ask about. Do not reformat. Do not rename anything
+  you were not asked to.
+- If a finding is wrong, REJECT it and leave that code alone. Rejecting is a normal outcome.
+
+Output STRICTLY this JSON and nothing else -- no prose before it, no code fence around it:
+
+{
+  "decisions": [
+    {"index": <0-based index>, "action": "accepted" | "rejected", "reason": "<one sentence>"}
+  ],
+  "code": "<the COMPLETE resulting contents of retry_policy.py, from first line to last>"
+}
+
+Every finding must appear exactly once in "decisions".
+"code" must be the whole file, importable and runnable as-is.
+
+--- FINDINGS ---

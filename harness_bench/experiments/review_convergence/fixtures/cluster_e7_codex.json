@@ -1,0 +1,1311 @@
+{
+  "items": [
+    {
+      "uid": "ctrl-run01#0",
+      "line": 304,
+      "severity": "major",
+      "category": "state-invariant",
+      "invariant": "\"The sample with generation g sits at ring position (g mod SWING_RING_SAMPLES)\" — this holds only if 2^32 is an exact multiple of SWING_RING_SAMPLES, because ring_head is a modulo of the *untruncated* push count while gen_oldest is a modulo of the 32-bit-wrapped ring_total.",
+      "trigger": "ring_total wraps past 2^32 (~49.7 days of continuous 1 kHz sampling, or sooner at higher ODR). With the documented geometry (~15.4 KB / 12 B = 1280 samples), 2^32 mod 1280 = 256, so after the wrap ring_head = (ring_total + 256) mod 1280 while the reader still computes start = gen_oldest mod 1280. Both guards still pass: oldest_resident_gen = ring_total - ring_count and newest_gen wrap consistently in modulo-2^32 arithmetic, so gen_oldest >= oldest_resident_gen and newest_gen < ring_total remain true.",
+      "consequence": "From the first wrap onward every snapshot silently returns a window shifted by 256 samples (~256 ms at 1 kHz). impact_idx no longer points at the impact, so the ML classifier is fed permanently misaligned swings with no error code and no counter increment — the failure is invisible to diagnostics. The in-file comment claiming a wrap 'only risks one spurious -ESTALE drop' is not what the arithmetic does."
+    },
+    {
+      "uid": "ctrl-run01#1",
+      "line": 87,
+      "severity": "major",
+      "category": "failure-recovery",
+      "invariant": "The -ESTALE guard is purely generation-based, so it is only sound if the generation space is monotonic for the entire lifetime of every descriptor that can still be in swing_q. Resetting ring_total/ring_count without purging swing_q breaks that.",
+      "trigger": "swing_capture_init() is re-invoked on any recovery path (sensor re-init after an I2C/SPI fault, session reset, subsystem restart) while up to SWING_QUEUE_SLOTS descriptors are still queued. ring_total/ring_count/ring[] are zeroed but swing_q retains the old descriptors. ml_thread then dequeues a pre-reset descriptor, e.g. gen_oldest=900, span_count=1024, and by the time it runs the fresh ring has pushed ~2000 samples: oldest_resident_gen = 2000-1280 = 720 <= 900 and newest_gen = 1923 < 2000, so both checks pass.",
+      "consequence": "An unrelated (or post-memset all-zero) 12 KB region of the ring is handed to the ML stage as a valid swing under the old session_id/impact_id. Bogus swing metrics are computed and persisted/uploaded against a real session, and no drop counter records it. Recovery from a sensor fault silently produces corrupt data instead of clean loss."
+    },
+    {
+      "uid": "ctrl-run01#2",
+      "line": 154,
+      "severity": "major",
+      "category": "state-invariant",
+      "invariant": "armed_impact_gen must identify the generation of the sample at which impact occurred; the code hardcodes it to the newest sample ever pushed, but the only ingest path is batch-granular.",
+      "trigger": "swing_capture_ring_push(batch, count) pushes a whole ICM-42688 FIFO batch (count > 1) and impact detection then scans that batch and calls swing_capture_on_impact(). The impact sample is at generation ring_total - count + k for the k-th packet, but on_impact records ring_total - 1 unconditionally — there is no parameter by which the caller could express k. The API offers no way to be correct for count > 1.",
+      "consequence": "impact_off / impact_idx is late by up to (batch_size - 1) samples (tens of milliseconds at typical FIFO watermarks), and the follow-through window is correspondingly shifted, truncating real follow-through and including pre-impact data. Every downstream metric anchored on impact_idx (club speed at impact, face angle, tempo) is systematically biased, on every swing, with no error signalled."
+    },
+    {
+      "uid": "ctrl-run01#3",
+      "line": 261,
+      "severity": "major",
+      "category": "concurrency-lifetime",
+      "invariant": "The file's own contract — \"armed, post_remaining, armed_* are mutated ONLY from sensor_thread\" — is violated by the public mutator swing_capture_force_expire(), which performs an unsynchronized test-and-clear on that same state, and by swing_capture_is_armed(), which reads a non-volatile bool cross-thread.",
+      "trigger": "A supervisory context (session-end handler, timeout work item, BLE disconnect callback) calls swing_capture_force_expire() — the only reason to export it — while sensor_thread is preempted inside swing_capture_tick() between `post_remaining = 0` and `k_msgq_put()`, or inside swing_capture_on_impact() between `armed = true` and the armed_* stores. armed is a plain bool with no atomic/volatile qualifier and no lock.",
+      "consequence": "The expire is lost (tick still enqueues a descriptor for a capture the system believes was cancelled, so a swing is attributed to an ended session), or on_impact's half-written armed_* fields are consumed with a stale session_id/rate_hz. Because armed is not volatile, a poll loop on swing_capture_is_armed() in another thread can also be hoisted by the compiler into an infinite spin."
+    },
+    {
+      "uid": "ctrl-run01#4",
+      "line": 287,
+      "severity": "minor",
+      "category": "resource-bound",
+      "invariant": "The ADR-004 staleness contract defines SWING_STALENESS_MARGIN as headroom the reader must have before the overwrite frontier; the guard applies zero margin — the constant is logged at init and used nowhere else in the file.",
+      "trigger": "A descriptor whose gen_oldest sits exactly at (or within a few samples of) oldest_resident_gen is accepted by the pre-check. The ~12 KB / ~1024-sample copy then runs while the writer is pushing at the sample rate; by the time the post-copy re-check runs the frontier has passed gen_oldest and the whole snapshot is discarded.",
+      "consequence": "Under ml_thread scheduling delay (higher-priority BLE/flash work), swings are lost after the full 12 KB copy has already been paid for — wasted CPU and battery on every dropped swing, and the drop is only visible as stale_count with no early rejection. The guard is also asymmetric: it rejects only after doing the work it was meant to avoid."
+    },
+    {
+      "uid": "ctrl-run01#5",
+      "line": 174,
+      "severity": "minor",
+      "category": "state-invariant",
+      "invariant": "armed_impact_gen must be a generation that has actually been written; `ring_total - 1` underflows to 0xFFFFFFFF when on_impact() runs before any ring_push().",
+      "trigger": "An impact event is delivered at boot before the first FIFO batch is pushed (impact source other than the ring feed, or a queued/replayed event during startup). ring_total == 0 → armed_impact_gen = 0xFFFFFFFF. The rc == 0 guard in tick() does not cover this, because follow-through pushes make rc > 0 by the time tick() completes. gen_oldest then lands near 0xFFFFFFFF while newest_gen wraps to a small value, so `newest_gen >= ring_total` and `gen_oldest < oldest_resident_gen` (oldest_resident_gen is near 0) both pass.",
+      "consequence": "start = 0xFFFFFxxx % SWING_RING_SAMPLES yields an arbitrary ring offset, and a window of zeroed/garbage samples is delivered as a valid swing for a real session_id/impact_id — same silent-corruption path as the wrap case, at boot rather than after 50 days."
+    },
+    {
+      "uid": "ctrl-run02#0",
+      "line": 184,
+      "severity": "major",
+      "category": "state-invariant",
+      "invariant": "When tick() emits a descriptor it promises that SWING_FOLLOWTHROUGH_SAMPLES generations strictly after armed_impact_gen have actually been written to the ring (desc.span_count assumes them unconditionally), but completion is decided by blind subtraction of a batch count that includes samples pushed at or before the impact.",
+      "trigger": "sensor_thread pushes a FIFO batch of N samples, calls swing_capture_on_impact() (which sets armed_impact_gen = ring_total - 1, i.e. the LAST sample of that batch) and then calls swing_capture_tick(N) for that same batch. post_remaining is immediately reduced by N even though zero of those N samples are after the impact generation. After FOLLOWTHROUGH samples have been counted, only FOLLOWTHROUGH - N samples actually exist past armed_impact_gen, yet desc.span_count = pre_avail + 1 + SWING_FOLLOWTHROUGH_SAMPLES.",
+      "consequence": "ml_thread's swing_capture_snapshot() computes newest_gen = gen_oldest + span_count - 1 = armed_impact_gen + FOLLOWTHROUGH >= ring_total and returns -EINVAL, so the swing is discarded. The -EINVAL path increments no counter and logs nothing, so every affected swing is lost silently and the qfull/missed/expired/stale diagnostics all read zero while coaching output never appears. tick() also returns true (enqueue succeeded), so the caller believes the capture was handed off. The correct completion test is generation-based (ring_total - 1 - armed_impact_gen >= SWING_FOLLOWTHROUGH_SAMPLES), which is immune to call ordering."
+    },
+    {
+      "uid": "ctrl-run02#1",
+      "line": 84,
+      "severity": "major",
+      "category": "failure-recovery",
+      "invariant": "After swing_capture_init() the module must contain no descriptor that references the old generation numbering; init resets ring_total/ring_count to 0 but leaves swing_q populated.",
+      "trigger": "swing_capture_init() is called again at runtime (error recovery, session restart, sensor re-init) while one or two descriptors are still queued in swing_q. The generation space restarts at 0 while the queued descriptors carry pre-reset gen_oldest values. Once the writer has run long enough that a stale gen_oldest happens to fall inside the new live window (gen_oldest >= ring_total - ring_count and gen_oldest + span_count - 1 < ring_total), both validity checks in swing_capture_snapshot() pass.",
+      "consequence": "ml_thread copies 12 KB of unrelated, freshly captured motion data and processes it as the old descriptor's (session_id, impact_id) — a fabricated swing attributed to the wrong impact, fed to the ML model and reported to the user as real coaching feedback. No counter records it. A k_msgq_purge(&swing_q) in init closes this."
+    },
+    {
+      "uid": "ctrl-run02#2",
+      "line": 161,
+      "severity": "major",
+      "category": "failure-recovery",
+      "invariant": "The armed state must always terminate; post_remaining can only drain if swing_capture_tick() keeps being called, and nothing inside the module bounds how long it may stay armed.",
+      "trigger": "An impact arms the capture and the sample stream then stops or stalls before SWING_FOLLOWTHROUGH_SAMPLES more samples arrive — the exact end-of-swing situation where the user sets the club down and the FIFO/sensor pipeline is throttled or gated for low power, or the sensor errors out and sensor_thread stops calling tick(). armed stays true and post_remaining stays non-zero indefinitely.",
+      "consequence": "Every subsequent impact is rejected at the `if (armed)` gate and only bumps missed_count — the device silently captures no swings for the rest of the session (or until a reboot). Recovery depends entirely on some external caller invoking swing_capture_force_expire(), but the module exposes no elapsed-time or generation-delta state that would let a caller know when to do so (swing_capture_is_armed() alone cannot distinguish 'armed 5 ms ago' from 'armed 10 minutes ago'). An internal deadline — e.g. expiring when ring_total - armed_impact_gen exceeds a bound — is absent."
+    },
+    {
+      "uid": "ctrl-run02#3",
+      "line": 283,
+      "severity": "minor",
+      "category": "concurrency-lifetime",
+      "invariant": "oldest_resident_gen = ring_total - ring_count must be computed from a consistent (ring_total, ring_count) pair; the two volatile reads are separate and the writer updates both between them.",
+      "trigger": "Before the ring saturates (the first SWING_RING_SAMPLES pushes after boot or after a re-init, ~1.3 s at 1 kHz), ring_total and ring_count advance in lockstep and are equal. ml_thread reads ring_total = T at line 283, is preempted by sensor_thread which pushes k samples, then reads ring_count = T + k. The unsigned subtraction yields T - (T + k) = 0xFFFFFFFF - k + 1, a huge value.",
+      "consequence": "desc->gen_oldest < oldest_resident_gen is trivially true, so a perfectly valid, fully resident window is rejected with -ESTALE and stale_count is incremented. The same interleaving can hit the post-copy re-check at line 322, throwing away 12 KB of already-copied good data. A swing captured shortly after boot/re-init is lost, and stale_count misattributes it to ring wrap-around, misleading field diagnostics."
+    },
+    {
+      "uid": "ctrl-run02#4",
+      "line": 302,
+      "severity": "minor",
+      "category": "state-invariant",
+      "invariant": "The generation-to-index mapping start = g % SWING_RING_SAMPLES is valid only while ring_head == ring_total % SWING_RING_SAMPLES. That identity holds from init but breaks permanently at the ring_total 2^32 wrap unless SWING_RING_SAMPLES divides 2^32 (i.e. is a power of two); ring_head wraps modulo SWING_RING_SAMPLES while ring_total wraps modulo 2^32.",
+      "trigger": "Continuous operation for ~49.7 days at 1 kHz without a swing_capture_init(), so ring_total rolls over. If SWING_RING_SAMPLES is not a power of two, after the rollover ring_head = 2^32 mod SWING_RING_SAMPLES != ring_total mod SWING_RING_SAMPLES. Additionally, across the rollover the ordering comparisons `desc->gen_oldest < oldest_resident_gen` and `newest_gen >= ring_total` compare wrapped against unwrapped values and can both pass on a descriptor whose data is gone.",
+      "consequence": "Contrary to the comment claiming a wrap costs at most one spurious -ESTALE, every snapshot after the rollover is rotated by a fixed offset — the returned window contains real sample data but the impact is at the wrong index, and the staleness guard can no longer detect it, so corrupted swings are silently delivered to the ML model for the remaining device uptime."
+    },
+    {
+      "uid": "ctrl-run02#5",
+      "line": 174,
+      "severity": "minor",
+      "category": "state-invariant",
+      "invariant": "armed_impact_gen must be the generation of the sample at which impact actually occurred; the code hardcodes it to the newest pushed sample, and the API provides no way for the caller to indicate where inside the just-pushed batch the impact was.",
+      "trigger": "Impact detection runs per FIFO batch (the only mode the ring_push batch API supports). The impact sample sits at an arbitrary offset inside a batch of N samples, but on_impact() records ring_total - 1, the last sample of the batch. If detection instead runs before the batch is pushed, armed_impact_gen points at the previous batch's last sample — an error of up to N samples in the other direction.",
+      "consequence": "desc.impact_off, which ml_thread trusts as out->impact_idx, is off by up to N-1 samples (tens of milliseconds at typical FIFO batch depths). The ML model's pre-impact/post-impact segmentation is skewed on every swing, biasing derived metrics (club speed at impact, face angle timing) in a way that never surfaces as an error."
+    },
+    {
+      "uid": "ctrl-run03#0",
+      "line": 303,
+      "severity": "major",
+      "category": "state-invariant",
+      "invariant": "The sample with write-generation g must reside at ring index (g % SWING_RING_SAMPLES). This holds only while ring_total counts pushes in lockstep with ring_head; it breaks permanently once ring_total wraps at 2^32, because 2^32 % SWING_RING_SAMPLES != 0 for the configured ring size (~15.4 KB / 12 B = 1280 samples; 2^32 % 1280 = 256).",
+      "trigger": "Continuous sampling until ring_total wraps 2^32 (~49.7 days at 1 kHz, or proportionally sooner across accumulated uptime if the counter is not reset). ring_head keeps advancing mod 1280 while ring_total restarts at 0, so generation g now physically lives at index (g + 256) % 1280, not (g % 1280). Both the pre-copy check (gen_oldest < ring_total - ring_count) and the post-copy re-check compare generations only and cannot detect the index skew.",
+      "consequence": "After the wrap, every snapshot silently returns a window shifted by 256 samples (a quarter second at 1 kHz) with impact_idx pointing at the wrong sample, and swing_capture_snapshot() returns 0 (success). The ML thread scores garbage-aligned swings with no error, no counter increment, and no log. The source comment at ring_total's declaration asserts the wrap 'only risks one spurious -ESTALE drop, which is degrade-safe' — that claim is wrong; the failure is silent data corruption for the remainder of uptime."
+    },
+    {
+      "uid": "ctrl-run03#1",
+      "line": 87,
+      "severity": "major",
+      "category": "failure-recovery",
+      "invariant": "Descriptors in swing_q must reference the same generation epoch as the live ring. swing_capture_init() resets ring_total/ring_count/ring to zero but leaves swing_q populated, so queued descriptors from the previous epoch survive the reset and are validated against generations that now mean something entirely different.",
+      "trigger": "Any re-init after boot (sensor re-init after an I2C/SPI fault, session restart, or recovery path) while at least one descriptor is still queued and ml_thread has not drained it. Example: queued desc has gen_oldest=5000, span=1024. After init, ring_total climbs from 0. While ring_total < 6024 the snapshot returns -EINVAL; once ring_total passes 6024, oldest_resident_gen = ring_total - 1280 = 4744 <= 5000, so both staleness checks pass and the copy proceeds.",
+      "consequence": "swing_capture_snapshot() returns 0 with a window filled from unrelated post-reset samples, tagged with the pre-reset session_id/impact_id. ML scores and reports a fabricated swing against a real impact record; no counter or log fires. Recovery from a sensor fault therefore produces corrupt coaching data instead of a clean restart."
+    },
+    {
+      "uid": "ctrl-run03#2",
+      "line": 284,
+      "severity": "minor",
+      "category": "concurrency-lifetime",
+      "invariant": "oldest_resident_gen must be computed from a consistent (ring_total, ring_count) pair. The two volatiles are read separately with no lock or interrupt masking, so sensor_thread can push between the two reads and the subtraction can underflow.",
+      "trigger": "ml_thread is preempted by sensor_thread between the read of ring_total and the read of ring_count, during the pre-saturation window (ring_count < SWING_RING_SAMPLES, i.e. the first ~1.3 s after boot or after a re-init) where ring_total == ring_count. Reader sees ring_total = T, then ring_count = T + k, giving 0 - k = 0xFFFFFFFF.",
+      "consequence": "Every gen_oldest compares as less than 0xFFFFFFFF, so a perfectly valid window is rejected with -ESTALE and stale_count is incremented. The first swing captured after boot or after a fault-recovery re-init can be silently dropped, and the counter attributes it to a ring lap that never happened, misleading field diagnostics."
+    },
+    {
+      "uid": "ctrl-run03#3",
+      "line": 174,
+      "severity": "minor",
+      "category": "state-invariant",
+      "invariant": "armed_impact_gen must be a generation that has actually been written. When ring_total == 0 the expression ring_total - 1 underflows to 0xFFFFFFFF, and the resulting descriptor's gen_oldest is a far-future generation that the snapshot validators cannot reliably reject.",
+      "trigger": "swing_capture_on_impact() is called before any swing_capture_ring_push() — e.g. an impact/tap event delivered from the sensor interrupt path before the first FIFO batch is drained, or an impact already in flight when swing_capture_init() resets ring_total to 0. armed_impact_gen becomes 0xFFFFFFFF; tick() then emits gen_oldest = 0xFFFFFFFF - pre_avail, and in snapshot() newest_gen = gen_oldest + span_count - 1 itself overflows and wraps to a small value, so `newest_gen >= ring_total` can be false while `gen_oldest < oldest_resident_gen` is also false — both guards pass.",
+      "consequence": "A window is copied from an arbitrary ring offset ((0xFFFFFFFF - pre_avail) % SWING_RING_SAMPLES) and returned as success, so ML scores uninitialized or unrelated samples for a real impact id. The `rc == 0` guard in tick() does not cover this: by the time the follow-through completes, ring_count is non-zero and the corrupt armed_impact_gen is used unchecked."
+    },
+    {
+      "uid": "ctrl-run03#4",
+      "line": 261,
+      "severity": "minor",
+      "category": "concurrency-lifetime",
+      "invariant": "The file header states 'armed, post_remaining, armed_* are mutated ONLY from sensor_thread', but swing_capture_force_expire() is exported specifically so a supervisor/watchdog can clear a stuck arm. If it is called from any thread other than sensor_thread, the armed/post_remaining state machine has two unsynchronised writers on plain (non-atomic, non-volatile) statics.",
+      "trigger": "force_expire() preempts swing_capture_on_impact() between `armed = true` and `post_remaining = SWING_FOLLOWTHROUGH_SAMPLES`: it observes armed==true, sets armed=false and post_remaining=0, increments expired_count; on_impact then resumes and writes armed_* plus post_remaining=FOLLOWTHROUGH without re-setting armed. Symmetrically it can clear an arm that tick() is midway through committing.",
+      "consequence": "The capture is silently lost — armed==false with a non-zero post_remaining, so no descriptor is ever enqueued and missed_count is not incremented; the swing simply never reaches ML. The residual post_remaining also skews the follow-through length of the next armed capture, shortening the window handed to the scorer."
+    },
+    {
+      "uid": "ctrl-run04#0",
+      "line": 184,
+      "severity": "major",
+      "category": "state-invariant",
+      "invariant": "When tick() emits a descriptor, all generations it references (gen_oldest .. armed_impact_gen + SWING_FOLLOWTHROUGH_SAMPLES) must already have been written to the ring.",
+      "trigger": "The natural sensor_thread sequence for the impact batch: ring_push(batch, n) -> impact detected -> swing_capture_on_impact() (sets post_remaining = SWING_FOLLOWTHROUGH_SAMPLES, armed_impact_gen = ring_total-1) -> swing_capture_tick(n) with the SAME n. tick immediately subtracts the n samples that were pushed BEFORE the impact generation, so the follow-through window closes n samples early. With a FIFO batch large enough that post_remaining <= count (or after a few batches, since every batch is over-credited by the arming batch's n), tick builds a descriptor whose newest sample has not been written yet.",
+      "consequence": "swing_capture_snapshot() computes newest_gen >= ring_total and returns -EINVAL, so the swing is discarded. The -EINVAL path increments no counter (unlike qfull/missed/expired/stale), so a systematic, 100%-loss failure of swing capture is invisible in device diagnostics — ML/coaching silently never receives swings."
+    },
+    {
+      "uid": "ctrl-run04#1",
+      "line": 87,
+      "severity": "major",
+      "category": "failure-recovery",
+      "invariant": "Descriptors in swing_q must only reference generations produced by the current incarnation of the ring; resetting the generation counters must invalidate every outstanding descriptor.",
+      "trigger": "swing_capture_init() is called again after boot (sensor re-init / rate change / fault recovery) while swing_q still holds descriptors that sensor_thread enqueued but ml_thread has not yet drained. ring_total/ring_count/ring[] are zeroed but the message queue is left populated.",
+      "consequence": "The stale descriptor (e.g. gen_oldest = 5000, span 1000) fails validation only until the freshly restarted ring passes ring_total > 5999; from then on it passes both the staleness and the newest_gen checks and snapshot() copies completely unrelated post-restart samples into the window, tagged with the OLD session_id/impact_id. Corrupt, mislabeled swing data is fed to the ML stage as if valid."
+    },
+    {
+      "uid": "ctrl-run04#2",
+      "line": 174,
+      "severity": "minor",
+      "category": "state-invariant",
+      "invariant": "desc.impact_off must index the actual impact sample inside the copied window.",
+      "trigger": "ring_push() consumes a whole FIFO batch (the API takes a batch pointer + count), so on_impact() can only run after the entire batch is resident. The impact sample is at some offset k inside that batch, but armed_impact_gen is unconditionally set to the batch's LAST generation.",
+      "consequence": "The impact is misattributed by up to (batch_size - 1) samples (tens of ms at 1 kHz with a typical FIFO watermark), so impact_idx handed to the ML/coaching stage points at a post-impact sample and the pre/post split of the swing window is shifted — feature extraction and coaching output are computed on a misaligned window."
+    },
+    {
+      "uid": "ctrl-run04#3",
+      "line": 174,
+      "severity": "minor",
+      "category": "state-invariant",
+      "invariant": "armed_impact_gen must denote a generation that exists (0 <= gen < ring_total).",
+      "trigger": "swing_capture_on_impact() is reached while ring_total == 0 (impact detected before the first ring_push after boot or after a re-init — the ordering the rc == 0 guard in tick() already admits is possible). ring_total - 1 underflows to 0xFFFFFFFF.",
+      "consequence": "gen_oldest becomes ~0xFFFFFF9C; the staleness compare passes (huge >= small), newest_gen wraps to a small value, and once ring_total exceeds it the -EINVAL guard also passes. start = gen_oldest % SWING_RING_SAMPLES then selects an arbitrary ring offset and a fully garbage 12 KB window is delivered to ml_thread as a valid swing."
+    },
+    {
+      "uid": "ctrl-run04#4",
+      "line": 283,
+      "severity": "minor",
+      "category": "concurrency-lifetime",
+      "invariant": "oldest_resident_gen must be derived from a mutually consistent (ring_total, ring_count) pair.",
+      "trigger": "ml_thread reads ring_total, is preempted by sensor_thread's ring_push (which increments ring_count before ring_total within each sample and grows both while the ring is still filling), then reads a larger ring_count. During the fill phase ring_count == ring_total, so a torn pair yields ring_total - ring_count < 0, which underflows to ~0xFFFFFFFF.",
+      "consequence": "Every descriptor snapshotted during the first ring-fill window (~1.3 s after boot or after any re-init) can be spuriously rejected with -ESTALE and the swing discarded, while stale_count reports a ring-wrap failure that never happened, masking the real cause."
+    },
+    {
+      "uid": "ctrl-run04#5",
+      "line": 285,
+      "severity": "minor",
+      "category": "state-invariant",
+      "invariant": "Generation ordering must be evaluated with wrap-safe (signed-difference) arithmetic, since ring_total is documented to wrap at 2^32.",
+      "trigger": "ring_total wraps (~49.7 days at 1 kHz) while a descriptor with a large pre-wrap gen_oldest is queued and ml_thread is delayed long enough for the writer to lap the span (>~1.3 s). Plain unsigned '<' then compares a pre-wrap gen_oldest against a post-wrap oldest_resident_gen.",
+      "consequence": "The guard fails OPEN, not closed: a genuinely lapped span passes both the pre- and post-copy staleness checks and a torn window (mixed old/new samples) is delivered as a valid swing. The header comment asserts the wrap can only cost 'one spurious -ESTALE drop', which understates the actual failure mode."
+    },
+    {
+      "uid": "ctrl-run04#6",
+      "line": 285,
+      "severity": "minor",
+      "category": "state-invariant",
+      "invariant": "The staleness check should reserve SWING_STALENESS_MARGIN generations of headroom, as the module advertises at init and as ADR-004 implies.",
+      "trigger": "Any descriptor whose gen_oldest sits within a few hundred samples of the oldest resident generation (ml_thread scheduling latency under load). SWING_STALENESS_MARGIN is logged at init but never referenced by either staleness comparison.",
+      "consequence": "There is zero headroom: such a swing passes the pre-check, ml_thread performs the full 12 KB copy into its static window, and only the post-copy re-check rejects it — burning CPU/energy on a battery device and, more importantly, converting swings that the documented margin was meant to protect into outright -ESTALE losses."
+    },
+    {
+      "uid": "ctrl-run05#0",
+      "line": 302,
+      "severity": "major",
+      "category": "state-invariant",
+      "invariant": "A sample with monotonic generation g must always live at ring index g % SWING_RING_SAMPLES; i.e. ring_head must equal (total samples ever pushed) % SWING_RING_SAMPLES for every value the generation counter can take.",
+      "trigger": "ring_total (uint32) wraps 0xFFFFFFFF -> 0 after ~2^32 samples (~49.7 days of continuous 1 kHz sampling, or sooner at higher ODR). The mapping g % SWING_RING_SAMPLES is only wrap-consistent if 2^32 is an exact multiple of SWING_RING_SAMPLES. With the layout documented in the file header (15.4 KB / 12 B per sample = 1280 samples), 2^32 mod 1280 = 256, so it is not. ring_head keeps advancing continuously across the wrap while the reader's modulo restarts at a different phase, leaving a permanent 256-sample offset (accumulating another 256 per wrap).",
+      "consequence": "After the wrap, swing_capture_snapshot() silently copies a window shifted by 256 samples (~256 ms at 1 kHz). Both the pre- and post-copy -ESTALE guards still pass, so the ML thread receives a well-formed but wrong window with impact_idx pointing at pre-impact data — permanently mis-scored swings with no error, no counter, and no log. The comment at lines 53-55 asserts a wrap only risks 'one spurious -ESTALE drop', which is not what happens."
+    },
+    {
+      "uid": "ctrl-run05#1",
+      "line": 283,
+      "severity": "major",
+      "category": "concurrency-lifetime",
+      "invariant": "The fail-closed staleness/validity guards must remain sound across the uint32 generation wrap: a descriptor whose span is no longer fully resident must be rejected, and a resident one accepted.",
+      "trigger": "Same wrap event as above. (a) Immediately after ring_total wraps to a small value while ring_count is saturated at SWING_RING_SAMPLES, `ring_total - ring_count` underflows to ~4.29e9, so every descriptor fails `gen_oldest < oldest_resident_gen` and is dropped for the next SWING_RING_SAMPLES pushes. (b) Worse, for a descriptor whose span straddles the wrap (gen_oldest near 2^32), `desc->gen_oldest + desc->span_count - 1` wraps to a small value, so `newest_gen >= ring_total` is false and the malformed-span guard passes. The same wrapped-arithmetic hole is reachable without a 49-day uptime if swing_capture_on_impact() is ever called with ring_total == 0 (armed_impact_gen = 0xFFFFFFFF at line 174), which produces exactly such a descriptor.",
+      "consequence": "Case (a) silently drops every swing for over a second and inflates stale_count. Case (b) returns 0 (success) from swing_capture_snapshot() after copying 12 KB from an arbitrary ring offset — garbage samples delivered to the classifier as a valid swing, with no diagnostic. Both guards that the design leans on for cross-thread safety are defeated by the same unsigned wrap."
+    },
+    {
+      "uid": "ctrl-run05#2",
+      "line": 184,
+      "severity": "major",
+      "category": "state-invariant",
+      "invariant": "When swing_capture_tick() emits a descriptor it claims SWING_FOLLOWTHROUGH_SAMPLES generations after armed_impact_gen exist in the ring; that must be verified against the actual write generation (ring_total - 1 >= armed_impact_gen + SWING_FOLLOWTHROUGH_SAMPLES).",
+      "trigger": "post_remaining is decremented by whatever `count` the caller passes, with no check that those samples were pushed after arming. If the sensor loop's per-batch order is ring_push(batch, count) -> impact detect -> swing_capture_on_impact() -> swing_capture_tick(count) (the order implied by `armed_impact_gen = ring_total - 1`, i.e. the impact is the last sample already pushed), the very first tick credits `count` samples that pre-date the impact. The follow-through then completes up to `count` samples early and the descriptor's newest generation has not been written yet. The same happens if the caller ever passes a count that does not match the samples actually pushed since the previous tick.",
+      "consequence": "swing_capture_snapshot() rejects the descriptor with -EINVAL at the `newest_gen >= ring_total` check, so the swing is lost — and because that path increments no counter and logs nothing, the loss is invisible in the field. Nothing in this module enforces or detects the required call ordering; a robust completion test would be `ring_total - armed_impact_gen > SWING_FOLLOWTHROUGH_SAMPLES`."
+    },
+    {
+      "uid": "ctrl-run05#3",
+      "line": 260,
+      "severity": "major",
+      "category": "concurrency-lifetime",
+      "invariant": "The file header states `armed`, `post_remaining` and `armed_*` are mutated ONLY from sensor_thread, and there is no lock or atomic protecting them; swing_capture_force_expire() breaks that invariant since its whole purpose (a supervisory follow-through timeout) implies a different, preemptible thread.",
+      "trigger": "Interleaving 1: sensor_thread enters swing_capture_tick(), passes `if (!armed)`, and is preempted while building the descriptor; the supervisor calls force_expire(), sees armed==true, sets armed=false / post_remaining=0 and bumps expired_count; sensor_thread resumes and enqueues the swing anyway. Interleaving 2: sensor_thread is preempted inside swing_capture_on_impact() between `armed = true;` and `post_remaining = SWING_FOLLOWTHROUGH_SAMPLES;`; force_expire() observes the half-initialised arm, clears armed, then on_impact resumes and writes armed_impact_gen/post_remaining over a disarmed state. `armed` is a plain non-volatile bool, so a polling reader via swing_capture_is_armed() may also never observe the update.",
+      "consequence": "A single swing is both counted as expired and delivered (double-processing / corrupted diagnostics), or an armed capture is silently discarded leaving post_remaining stale — the impact is lost with no drop counter attributed to it. Because `armed` is read-modify-written without synchronisation, the module can also latch into a state where post_remaining > 0 while armed == false."
+    },
+    {
+      "uid": "ctrl-run05#4",
+      "line": 294,
+      "severity": "minor",
+      "category": "failure-recovery",
+      "invariant": "Every path that discards a captured swing should be observable through the diagnostic counters the module exposes (qfull / missed / expired / stale).",
+      "trigger": "swing_capture_snapshot() returns -EINVAL for a malformed or not-yet-written descriptor (lines ~274 and ~296), and swing_capture_tick() silently disarms and returns false when rc == 0 (line ~207). None of these increments a counter or logs.",
+      "consequence": "On a device in the field, a systematic descriptor/ordering fault (e.g. the follow-through accounting defect above) manifests only as 'swings stopped being classified' with every exported counter reading zero, leaving no way to diagnose or triage remotely."
+    },
+    {
+      "uid": "ctrl-run06#0",
+      "line": 87,
+      "severity": "major",
+      "category": "failure-recovery",
+      "invariant": "A descriptor in swing_q must always refer to the same generation space as the ring it will be snapshotted from; resetting the generation counters must invalidate every outstanding descriptor.",
+      "trigger": "swing_capture_init() is called a second time (sensor re-init after a bus/FIFO error, session restart, recovery path) while one or two descriptors are still queued in swing_q. ring_total/ring_count go back to 0 but the queue is never purged. The old descriptor's gen_oldest (say 5000) is later re-validated against the NEW generation space: once ring_total climbs into the range (gen_oldest + span_count, gen_oldest + SWING_RING_SAMPLES] — a window of SWING_RING_SAMPLES - SWING_MAX_SAMPLES generations — both guards pass (gen_oldest >= ring_total - ring_count and newest_gen < ring_total).",
+      "consequence": "ml_thread receives a 12 KB window of completely unrelated post-reinit samples, labelled with the pre-reinit session_id/impact_id, and returns bogus swing metrics for a swing that never happened. Silent — no -ESTALE, no -EINVAL, no counter incremented. The same re-init also memsets 15 KB of ring[] concurrently with sensor_thread's ring_push."
+    },
+    {
+      "uid": "ctrl-run06#1",
+      "line": 301,
+      "severity": "major",
+      "category": "state-invariant",
+      "invariant": "ring index of generation g == g % SWING_RING_SAMPLES. This only holds if SWING_RING_SAMPLES divides 2^32; the ring is ~15.4 KB / 12 B = 1280 samples, and 2^32 mod 1280 = 256, so the identity breaks permanently once ring_total wraps.",
+      "trigger": "Device stays powered ~49.7 days at 1 kHz (or proportionally less at higher ODR) without swing_capture_init() being re-run. ring_head keeps its true modulo-1280 position while ring_total restarts at 0; thereafter ring_head != ring_total % SWING_RING_SAMPLES, permanently offset by 256.",
+      "consequence": "Not the 'one spurious -ESTALE drop' the comment claims. After the wrap, every snapshot passes both staleness guards and copies a window misaligned by 256 samples — the impact is not at out->impact_idx and the follow-through is truncated. ML output is silently wrong for the rest of the power cycle, with no error and no counter."
+    },
+    {
+      "uid": "ctrl-run06#2",
+      "line": 284,
+      "severity": "major",
+      "category": "concurrency-lifetime",
+      "invariant": "SWING_STALENESS_MARGIN is supposed to keep the descriptor's oldest sample a safe distance from the writer's overwrite point; it is logged in init but never used in either staleness comparison, so the guard accepts gen_oldest exactly equal to the generation the writer is overwriting right now.",
+      "trigger": "ring_push() stores the six int16s for generation T into slot T % SWING_RING_SAMPLES — destroying the sample of generation T - SWING_RING_SAMPLES — and only THEN does ring_total++. If ml_thread is scheduled in that gap with a descriptor whose gen_oldest == T - SWING_RING_SAMPLES, both the pre-copy and post-copy checks compute oldest_resident_gen = T - SWING_RING_SAMPLES and accept.",
+      "consequence": "The first sample(s) of the copied window contain freshly written future data instead of the intended pre-impact samples, and the fail-closed guard reports success. ML sees a discontinuity at the head of the swing window; no -ESTALE, stale_count not incremented. The declared margin that would have prevented this is dead."
+    },
+    {
+      "uid": "ctrl-run06#3",
+      "line": 259,
+      "severity": "major",
+      "category": "concurrency-lifetime",
+      "invariant": "File header states 'armed, post_remaining, armed_* are mutated ONLY from sensor_thread', but swing_capture_force_expire() is a public API that writes both, and swing_capture_is_armed() reads a plain (non-volatile, non-atomic) bool. There is no lock, no k_sched_lock, and no documented caller restriction.",
+      "trigger": "A supervisory timeout (k_timer ISR, workqueue, or ml_thread) calls swing_capture_force_expire() while sensor_thread is inside swing_capture_tick() past the `if (!armed)` test — or while swing_capture_on_impact() is between `armed = true` and `post_remaining = SWING_FOLLOWTHROUGH_SAMPLES`. Also: `post_remaining = post_remaining - count` in tick is a non-atomic read-modify-write that can clobber force_expire's `post_remaining = 0`.",
+      "consequence": "A swing that was explicitly expired still gets a descriptor enqueued and analysed (expired_count incremented AND the swing delivered), or an arm is lost so a real swing is never captured. With a polling caller, the non-volatile `armed` read in is_armed() can be hoisted out of the poll loop, hanging that thread. The stated single-writer invariant that the whole lock-free design rests on is not actually enforced."
+    },
+    {
+      "uid": "ctrl-run06#4",
+      "line": 282,
+      "severity": "minor",
+      "category": "concurrency-lifetime",
+      "invariant": "oldest_resident_gen must be derived from a consistent (ring_total, ring_count) pair; the code reads the two volatiles separately with no atomicity, so sensor_thread can push samples between the two loads.",
+      "trigger": "During ring fill (first SWING_RING_SAMPLES samples after boot or after swing_capture_init(), when ring_total == ring_count and both are still moving), ml_thread reads ring_total = T, is preempted by sensor_thread which pushes k samples, then reads ring_count = T + k. oldest_resident_gen = T - (T + k) underflows to ~2^32 - k.",
+      "consequence": "A perfectly valid descriptor is rejected with -ESTALE and the first swing after boot/re-init is silently dropped (stale_count incremented, no data). Fail-closed rather than corrupting, but it drops real user swings in exactly the window where the ring is being primed."
+    },
+    {
+      "uid": "ctrl-run06#5",
+      "line": 173,
+      "severity": "minor",
+      "category": "state-invariant",
+      "invariant": "armed_impact_gen must name a real generation; `ring_total - 1` is an unsigned underflow when ring_total == 0.",
+      "trigger": "swing_capture_on_impact() is reached before any ring_push() has run — e.g. an impact-detection path that runs off a separate ISR/threshold source, or a re-init that zeroes ring_total while an impact is being processed. armed_impact_gen becomes 0xFFFFFFFF. The rc == 0 guard in tick does not cover this: by tick time samples have been pushed, so rc != 0.",
+      "consequence": "desc.gen_oldest ends up near 2^32, newest_gen wraps, and swing_capture_snapshot() returns -EINVAL. The swing is lost with no counter incremented at all (qfull/missed/expired/stale all stay 0), so the drop is invisible to diagnostics and to any field triage of 'why did this swing not score'."
+    },
+    {
+      "uid": "ctrl-run06#6",
+      "line": 183,
+      "severity": "minor",
+      "category": "state-invariant",
+      "invariant": "When tick() completes the follow-through, at least SWING_FOLLOWTHROUGH_SAMPLES generations must have been pushed AFTER armed_impact_gen, because the descriptor unconditionally claims span_count = pre_avail + 1 + SWING_FOLLOWTHROUGH_SAMPLES. tick() credits the whole batch `count` regardless of how many of those samples actually postdate the impact.",
+      "trigger": "sensor_thread's per-batch loop arms and then ticks in the same iteration (ring_push(batch, n) → detect impact → on_impact() → tick(n)). The n samples of the arming batch all have generation <= armed_impact_gen, yet post_remaining is reduced by n, so capture completes n samples early.",
+      "consequence": "newest_gen = gen_oldest + span_count - 1 >= ring_total, so swing_capture_snapshot() returns -EINVAL and EVERY swing is dropped — and via the -EINVAL path, which increments no counter, so the failure is silent. With the opposite ordering the code is correct, meaning correctness depends entirely on an undocumented caller ordering rather than on state this module owns."
+    },
+    {
+      "uid": "ctrl-run07#0",
+      "line": 31,
+      "severity": "major",
+      "category": "resource-bound",
+      "invariant": "A descriptor sitting in swing_q must remain snapshot-able until ml_thread drains it; queue depth SWING_QUEUE_SLOTS must therefore represent real buffering capacity.",
+      "trigger": "Ring holds ~15.4 KB / 12 B = ~1283 samples; a window is 12 KB / 12 B = ~1000 samples. Headroom between the newest sample of a queued span and the writer lapping gen_oldest is only ~283 samples (~0.28 s at 1 kHz). Any ml_thread latency beyond that — a single inference pass, a preempting BLE/flash job, or simply a second descriptor queued behind the first — makes the descriptor unsatisfiable.",
+      "consequence": "Swings are silently dropped as -ESTALE at snapshot time even though they were captured and enqueued successfully; with SWING_QUEUE_SLOTS > 1 every slot past the first is dead weight, since the second descriptor is essentially guaranteed to be stale by the time the first swing's inference finishes. The device reports a successful capture (no qfull drop, no missed count) yet produces no coaching output."
+    },
+    {
+      "uid": "ctrl-run07#1",
+      "line": 87,
+      "severity": "major",
+      "category": "failure-recovery",
+      "invariant": "Resetting the generation counter must invalidate every outstanding descriptor that was minted against the old generation epoch.",
+      "trigger": "swing_capture_init() is called again after boot (sensor re-configuration, error recovery, session restart) while one or more descriptors are still queued in swing_q. ring_total/ring_count reset to 0, but swing_q is never purged. A queued descriptor with gen_oldest = 5000 first fails with -EINVAL (newest_gen >= ring_total), but once ~6000 fresh samples have been pushed (~6 s at 1 kHz) the same stale descriptor passes both the -ESTALE and the newest_gen checks.",
+      "consequence": "ml_thread receives a fully populated swing_window built from unrelated post-reset samples and treats it as a real swing — silent garbage input to inference, wrong shot metrics attributed to a real session_id/impact_id. Recovery after a sensor fault produces corrupt data instead of clean state."
+    },
+    {
+      "uid": "ctrl-run07#2",
+      "line": 176,
+      "severity": "major",
+      "category": "state-invariant",
+      "invariant": "An armed capture must always terminate; the armed flag must not be able to latch indefinitely and block subsequent impacts.",
+      "trigger": "post_remaining is decremented only by swing_capture_tick(count) from the sample stream — there is no time bound. If sample delivery stops or stalls after an impact (device goes idle/low-power, FIFO drain suspended, sensor_thread blocked on a bus error), post_remaining never reaches 0 and armed stays true across the whole idle gap. force_expire() is the only escape and is never invoked from within this module.",
+      "consequence": "The next real swing after the gap hits `if (armed)` in swing_capture_on_impact() and is dropped (missed_count++), and when samples resume, tick() completes the ancient capture whose gen_oldest is long overwritten, producing a descriptor that snapshot rejects with -ESTALE. Two consecutive swings are lost after every stall, with no self-recovery inside the module."
+    },
+    {
+      "uid": "ctrl-run07#3",
+      "line": 175,
+      "severity": "major",
+      "category": "state-invariant",
+      "invariant": "armed_impact_gen must identify a generation that has actually been written to the ring; the guard added for review finding H must actually cover the underflow it names.",
+      "trigger": "swing_capture_on_impact() runs when ring_total == 0 (impact detected before the first swing_capture_ring_push() — e.g. an impact path fed from a separate ISR/detector, or a tap/impact reported in the same batch iteration before the ring push). armed_impact_gen becomes 0xFFFFFFFF. The compensating guard in tick() tests `rc == 0`, but by the time tick() runs, ring_push has already made ring_count > 0, so the guard passes.",
+      "consequence": "gen_oldest = 0xFFFFFFFF - pre_avail; the -ESTALE comparison passes (huge value is never < oldest_resident_gen), newest_gen wraps to a small number so the `newest_gen >= ring_total` check also passes, and the copy reads an arbitrary ring offset. snapshot() returns 0 with a garbage window — silent corrupt input to ML inference rather than a clean rejection."
+    },
+    {
+      "uid": "ctrl-run07#4",
+      "line": 303,
+      "severity": "critical",
+      "category": "state-invariant",
+      "invariant": "ring index of generation g == g % SWING_RING_SAMPLES — i.e. ring_head must stay congruent to ring_total mod SWING_RING_SAMPLES for all time.",
+      "trigger": "ring_total rolls over at 2^32. SWING_RING_SAMPLES (~1283) does not divide 2^32, so after the wrap ring_head == (2^32 mod SWING_RING_SAMPLES) != 0 while ring_total % SWING_RING_SAMPLES == 0. The two desync by a fixed non-zero offset permanently, for every snapshot from then on.",
+      "consequence": "Every subsequent snapshot copies a window shifted by a constant offset from the true impact location and returns 0 (success). The impact_idx no longer points at impact; ML runs on misaligned data indefinitely with no error, no counter, and no recovery short of reboot or re-init. The source comment asserting the wrap 'only risks one spurious -ESTALE drop, which is degrade-safe' is incorrect — the failure is silent and permanent."
+    },
+    {
+      "uid": "ctrl-run07#5",
+      "line": 286,
+      "severity": "major",
+      "category": "state-invariant",
+      "invariant": "The staleness and range guards must be wrap-safe with respect to the 32-bit generation counter (comparisons on differences, not on absolute values).",
+      "trigger": "A descriptor is minted just before ring_total rolls over 2^32 and snapshotted just after (or any descriptor in flight across the rollover). gen_oldest ≈ 0xFFFFFFxx while oldest_resident_gen = ring_total - ring_count is computed from a post-wrap small ring_total; newest_gen = gen_oldest + span_count - 1 also wraps to a small value.",
+      "consequence": "Both guards fail open: `gen_oldest < oldest_resident_gen` is false so the stale descriptor is accepted, and `newest_gen >= ring_total` is false so the range check is bypassed. snapshot() returns 0 with a window copied from unrelated ring content — the fail-closed contract of ADR-004 becomes fail-open exactly at the moment it is needed."
+    },
+    {
+      "uid": "ctrl-run07#6",
+      "line": 284,
+      "severity": "major",
+      "category": "state-invariant",
+      "invariant": "SWING_STALENESS_MARGIN — the safety headroom the design (and the init log line) declares — must be applied when deciding whether a descriptor's oldest sample is still safely resident.",
+      "trigger": "The constant is referenced only in the LOG_INF banner and nowhere in the acceptance test. Any descriptor whose gen_oldest equals oldest_resident_gen exactly (the sample the very next ring_push will overwrite) is accepted, and the ~1000-sample copy then runs with zero headroom.",
+      "consequence": "The designed margin does not exist: captures at the ring edge are admitted, the 12 KB copy proceeds, and the post-copy recheck then discards the whole result. Wasted CPU/energy on doomed copies on a battery device, and stale_count reports failures the margin was specified to prevent — the implemented behaviour does not match the documented ADR-004 contract."
+    },
+    {
+      "uid": "ctrl-run07#7",
+      "line": 216,
+      "severity": "minor",
+      "category": "state-invariant",
+      "invariant": "The pre-impact span must be clamped to the pre-impact samples still resident at descriptor-build time; rc counts post-impact samples too, so rc - 1 is not that bound.",
+      "trigger": "A large or late FIFO drain: sensor_thread is delayed and delivers a batch far larger than SWING_FOLLOWTHROUGH_SAMPLES (e.g. 1000 samples in one push). ring_total jumps by 1000 before tick() builds the descriptor, so oldest_resident_gen = ring_total - ring_count is already newer than gen_oldest = armed_impact_gen - pre_avail. The rc - 1 clamp does not catch this because rc has saturated at SWING_RING_SAMPLES.",
+      "consequence": "The descriptor is born stale: tick() returns true (capture reported as successful, no drop counted), and ml_thread's snapshot immediately returns -ESTALE. Swings are lost precisely under the load spikes where sensor_thread was already behind, and the loss is attributed to staleness rather than to the batch overshoot."
+    },
+    {
+      "uid": "ctrl-run07#8",
+      "line": 324,
+      "severity": "minor",
+      "category": "concurrency-lifetime",
+      "invariant": "In a seqlock-style read (check → copy → recheck), the non-volatile payload accesses must be ordered against the volatile guard reads; volatile alone orders only volatile-to-volatile accesses.",
+      "trigger": "C11/C17 permit the compiler to move non-volatile loads from ring[] and stores to *out across the volatile reads of ring_total/ring_count, since neither is volatile-qualified and neither can alias the counters. A sufficiently aggressive optimizer (LTO, loop sinking) may sink part of the copy past the post-copy reload or hoist it before the pre-check, and sensor_thread can preempt ml_thread anywhere in the ~1000-iteration loop.",
+      "consequence": "The lap-detection guard degrades to a no-op for the reordered portion of the copy, so a torn window (early samples from the previous lap, later samples from the current one) is returned as success. The in-file comment claiming 'volatile on the consumer reload is the minimal sufficient fix' is not sound — a compiler barrier around the copy loop is required."
+    },
+    {
+      "uid": "ctrl-run08#0",
+      "line": 302,
+      "severity": "major",
+      "category": "state-invariant",
+      "invariant": "The sample with generation g must reside at ring index (g % SWING_RING_SAMPLES); i.e. ring_head must always equal ring_total % SWING_RING_SAMPLES.",
+      "trigger": "ring_total is a uint32 that wraps at 2^32 (~49.7 days of continuous 1 kHz sampling), while ring_head is an independent counter advanced modulo SWING_RING_SAMPLES. The two stay in phase only if 2^32 is an exact multiple of SWING_RING_SAMPLES. For the documented ring size (~15.4 KB / 12 B ≈ 1280 samples, i.e. 2^8*5) 2^32 % 1280 == 256, so after the wrap the mapping is permanently offset by 256 samples. In addition, at the wrap the descriptor's gen_oldest is just below 2^32 while ring_total is small, so `desc->gen_oldest < oldest_resident_gen` is false (oldest_resident_gen itself underflows to ~2^32) and `newest_gen` also wraps to a small value, so `newest_gen >= ring_total` is false — both guards pass.",
+      "consequence": "After the generation counter wraps, every snapshot silently returns a window rotated by (2^32 % SWING_RING_SAMPLES) samples: the ML thread is handed a 12 KB buffer of real-looking but wrong sensor data, with impact_idx pointing at an arbitrary sample. No -ESTALE/-EINVAL is raised and no counter increments, so the fault is invisible. The source comment asserting the wrap 'only risks one spurious -ESTALE drop, which is degrade-safe' is incorrect."
+    },
+    {
+      "uid": "ctrl-run08#1",
+      "line": 283,
+      "severity": "major",
+      "category": "concurrency-lifetime",
+      "invariant": "oldest_resident_gen must be computed from a mutually consistent (ring_total, ring_count) pair; `volatile` makes each read fresh but does NOT make the pair atomic.",
+      "trigger": "ml_thread evaluates `ring_total - ring_count` as two separate loads. sensor_thread can push a batch (or be preempted inside ring_push between `ring_count++` and `ring_total++`) between them. Case 1 — ring not yet saturated (first ~1.3 s after swing_capture_init, when ring_count == ring_total): reader loads ring_total = N, writer pushes k samples, reader loads ring_count = N+k, giving N-(N+k) = 0xFFFFFFF... . Case 2 — saturated ring, writer preempted between the two increments: oldest_resident_gen comes out one generation too small.",
+      "consequence": "Case 1: oldest_resident_gen becomes ~4.29e9, so `desc->gen_oldest < oldest_resident_gen` always fires — a valid early-boot swing is dropped with -ESTALE and stale_count is inflated, and the same underflow can hit the post-copy re-check after a full 12 KB copy has already been done. Case 2: the fail-closed post-copy guard under-reports how far the writer advanced and can accept a window whose first sample was already overwritten, handing torn data to the ML stage."
+    },
+    {
+      "uid": "ctrl-run08#2",
+      "line": 174,
+      "severity": "major",
+      "category": "state-invariant",
+      "invariant": "armed_impact_gen must identify a generation that has actually been written to the ring (armed_impact_gen < ring_total).",
+      "trigger": "swing_capture_on_impact() is called while ring_total == 0 (impact armed before the first swing_capture_ring_push — e.g. impact detection running off a path that arms before the batch is pushed, or the very first batch after swing_capture_init()). `ring_total - 1` underflows to 0xFFFFFFFF. The rc==0 guard in tick() does not catch this because ring_count can already be non-zero on the next batch. The resulting descriptor then passes BOTH snapshot guards: gen_oldest ≈ 0xFFFFFFFF is not less than the small oldest_resident_gen, and newest_gen = gen_oldest + span_count - 1 wraps to a small value that is less than ring_total.",
+      "consequence": "A fabricated window is copied from ring index (0xFFFFFFFF - pre_avail) % SWING_RING_SAMPLES and returned as a successful snapshot: the ML thread analyses uninitialised/unrelated ring content as a real swing, and reports a bogus result for that impact. Silent — no error code, no counter."
+    },
+    {
+      "uid": "ctrl-run08#3",
+      "line": 252,
+      "severity": "minor",
+      "category": "concurrency-lifetime",
+      "invariant": "State shared across threads must be declared so the compiler cannot cache it, and read-modify-write sequences on it must not interleave; `armed` and `post_remaining` are exempted from the `volatile` treatment applied to ring_count/ring_total despite being exposed through public cross-thread APIs.",
+      "trigger": "swing_capture_is_armed() / swing_capture_force_expire() are public and thread-unrestricted; force_expire() exists precisely as an out-of-band supervisor/timeout hook. If any thread other than sensor_thread calls them, (a) a poll loop on swing_capture_is_armed() may read a value the compiler hoisted out of the loop since `armed` is a plain bool, and (b) force_expire() clearing `armed`/`post_remaining` can land between tick()'s `if (!armed)` test and its `k_msgq_put()`.",
+      "consequence": "A watchdog polling is_armed() can spin forever on a cached value; a force-expire racing tick() enqueues a descriptor for a capture that was already declared expired, so expired_count and an actual swing result are both produced for the same impact."
+    },
+    {
+      "uid": "ctrl-run08#4",
+      "line": 285,
+      "severity": "minor",
+      "category": "failure-recovery",
+      "invariant": "The module's declared ring-wrap staleness contract includes SWING_STALENESS_MARGIN (logged at init as part of the contract); the acceptance test must reserve that margin so a snapshot is only started when it can finish before the writer laps the span.",
+      "trigger": "SWING_STALENESS_MARGIN is referenced only in the LOG_INF banner and nowhere in the staleness comparisons. Any descriptor whose gen_oldest is exactly at (or a few samples above) the overwrite boundary passes the pre-check, so the full span_count-iteration (up to 12 KB) copy runs and is then discarded by the post-copy re-check.",
+      "consequence": "On a loaded system the ML thread burns a full 12 KB copy per late swing before failing closed, and the guard has zero headroom — the only thing separating a rejected window from an accepted-but-torn one is the exact-boundary comparison, which the non-atomic (ring_total, ring_count) read above can already skew by a sample."
+    },
+    {
+      "uid": "ctrl-run09#0",
+      "line": 302,
+      "severity": "critical",
+      "category": "state-invariant",
+      "invariant": "The generation→ring-index mapping `ring_head == ring_total % SWING_RING_SAMPLES` must hold for the whole life of the device, since snapshot() locates samples purely as `gen % SWING_RING_SAMPLES` and never consults ring_head.",
+      "trigger": "ring_total wraps 2^32 (~49.7 days of continuous 1 kHz sampling, or any accumulated uptime reaching 2^32 pushes). SWING_RING_SAMPLES is 1280 (15360 B / 12 B per sample) and 1280 does NOT divide 2^32: 2^32 mod 1280 == 256. ring_head advances continuously mod 1280 across the wrap, while ring_total restarts at 0, so from that instant onward ring_head == (ring_total + 256) % 1280 forever.",
+      "consequence": "Every swing snapshot taken after the wrap silently returns a window shifted by 256 samples (≈256 ms at 1 kHz) from the real data: impact_idx no longer points at the impact, and the accel/gyro span contains unrelated samples. Both staleness guards operate purely in generation space and still pass, so the corruption is undetected — ml_thread computes and reports bogus swing metrics as if valid, permanently, until reboot. The header comment claiming a wrap 'only risks one spurious -ESTALE drop' is wrong: the -EINVAL/-ESTALE effect is a one-swing transient, the index skew is permanent."
+    },
+    {
+      "uid": "ctrl-run09#1",
+      "line": 260,
+      "severity": "major",
+      "category": "concurrency-lifetime",
+      "invariant": "The file's own contract states `armed`, `post_remaining` and `armed_*` are mutated ONLY from sensor_thread, yet swing_capture_force_expire() is an exported, unsynchronized mutator of exactly that state, and swing_capture_is_armed() exports a plain (non-volatile, non-atomic) read of it.",
+      "trigger": "force_expire() has no in-file caller and sensor_thread already expires captures via tick(), so its only plausible use is a supervisor/timeout context (matching `expired_count`) on a different, preemptible thread. If that thread preempts sensor_thread between `armed = true` (line 168) and `post_remaining = SWING_FOLLOWTHROUGH_SAMPLES` (line 175), force_expire sets armed=false and post_remaining=0, then on_impact resumes and writes post_remaining back to a nonzero value with armed==false. Symmetrically, preempting inside tick() after its `!armed` check lets a descriptor be enqueued for a capture that was just declared expired.",
+      "consequence": "A real impact is silently lost (armed cleared while the arming sequence is still running), or a swing is both counted as expired and enqueued. Additionally, because `armed` is a plain bool with external linkage only through is_armed(), a supervisor polling `while (swing_capture_is_armed())` under LTO/whole-program optimization may have the load hoisted and spin forever, hanging that thread."
+    },
+    {
+      "uid": "ctrl-run09#2",
+      "line": 84,
+      "severity": "major",
+      "category": "failure-recovery",
+      "invariant": "After swing_capture_init(), no in-flight descriptor may reference the ring, because init resets the generation space (ring_total = 0) that every queued descriptor's gen_oldest was minted in.",
+      "trigger": "init() is called a second time on a recovery path (IMU re-init after a SPI/FIFO fault, sensor reset) while swing_q still holds up to SWING_QUEUE_SLOTS descriptors that ml_thread has not drained. init memsets the ring and zeroes ring_total/ring_count but never purges swing_q. A leftover descriptor with gen_oldest = G is then interpreted against the restarted counter: it fails `newest_gen >= ring_total` (-EINVAL) only until ring_total climbs past G + span_count, after which both guards pass and the copy proceeds.",
+      "consequence": "On a slow-draining or blocked ml_thread, a pre-reset descriptor is eventually accepted as valid and the ML stage analyzes an arbitrary 1024-sample slice of post-reset (or zeroed) ring data as a real swing — a fabricated shot with fabricated metrics reported to the user. The generation-based staleness guard, the module's only cross-thread safety net, is defeated because both sides of the comparison were reset out from under the descriptor."
+    },
+    {
+      "uid": "ctrl-run09#3",
+      "line": 285,
+      "severity": "minor",
+      "category": "state-invariant",
+      "invariant": "SWING_STALENESS_MARGIN is part of the declared ring-wrap staleness contract (ADR-004) and is even logged at init as an active parameter, but it is never applied to either staleness comparison — the guard accepts descriptors whose oldest sample is exactly one push away from being overwritten.",
+      "trigger": "ml_thread reaches snapshot() when gen_oldest == oldest_resident_gen (writer within one sample of lapping the span start). The pre-check passes with zero slack, the full 12 KB / 1024-sample copy runs, the writer laps the start mid-copy, and the post-copy re-check then rejects the window.",
+      "consequence": "The margin the design specifies to keep marginal windows out of the copy path does nothing: boundary swings burn a full 12 KB copy of already-tearing data before being discarded, and the -ESTALE rate under ml_thread load is higher than the configured margin implies. Correctness is preserved only by the post-copy re-check; the documented defence-in-depth layer is absent, so any future change that weakens the post-check (e.g. losing `volatile`) removes the last guard entirely."
+    },
+    {
+      "uid": "ctrl-run10#0",
+      "line": 302,
+      "severity": "major",
+      "category": "state-invariant",
+      "invariant": "The generation→ring-index mapping `g % SWING_RING_SAMPLES` must equal the slot the writer actually used for generation g. This holds only while `ring_head == ring_total % SWING_RING_SAMPLES`, which requires SWING_RING_SAMPLES to divide 2^32 (i.e. be a power of two). The header comment states the ring is ~15.4 KB / 12 B = ~1315 samples, which is not a power of two.",
+      "trigger": "`ring_total` wraps past 2^32 (~49.7 days of continuous 1 kHz sampling, or sooner at higher ODR). `ring_head` continues advancing mod SWING_RING_SAMPLES uninterrupted, but `ring_total` restarts at 0, so `g % SWING_RING_SAMPLES` is permanently offset by `2^32 % SWING_RING_SAMPLES` (nonzero) from the true slot.",
+      "consequence": "After the wrap, every snapshot passes both the staleness and the newest_gen checks (they use only differences of ring_total/ring_count, which remain self-consistent) but copies samples from the wrong ring offset — the ML window is silently filled with data from a different point in time. No error is returned and no counter increments, so the device reports plausible-looking but wrong swing classifications indefinitely. The in-file comment claiming a wrap 'only risks one spurious -ESTALE drop' is incorrect: the damage is permanent, not one-shot."
+    },
+    {
+      "uid": "ctrl-run10#1",
+      "line": 87,
+      "severity": "major",
+      "category": "failure-recovery",
+      "invariant": "Re-initialisation must leave no descriptor in flight that references the pre-init generation space. `swing_capture_init()` resets `ring_total`/`ring_count` to 0 but never purges `swing_q`.",
+      "trigger": "Any re-init after boot (sensor re-configuration, error recovery, session restart) while descriptors are still queued — e.g. a descriptor with gen_oldest=0, span_count=1024 is enqueued, ml_thread has not drained it, sensor_thread calls swing_capture_init(), then ~1100 fresh samples are pushed. ml_thread then dequeues the old descriptor: oldest_resident_gen is small, gen_oldest >= it, and newest_gen < ring_total, so both guards pass.",
+      "consequence": "The snapshot succeeds and returns a full window of post-reset samples stamped with the stale descriptor's session_id/impact_id and sample_rate_hz. A swing is scored and persisted against the wrong session/impact from completely unrelated sensor data, with no error path taken — silent data corruption rather than a detectable drop."
+    },
+    {
+      "uid": "ctrl-run10#2",
+      "line": 184,
+      "severity": "major",
+      "category": "state-invariant",
+      "invariant": "The descriptor asserts that SWING_FOLLOWTHROUGH_SAMPLES samples exist at generations armed_impact_gen+1 .. armed_impact_gen+FT, but `tick()` credits `count` against `post_remaining` without ever checking that those samples were actually pushed after arming. The module has `ring_total` available and never validates `ring_total - 1 >= armed_impact_gen + SWING_FOLLOWTHROUGH_SAMPLES` before enqueueing.",
+      "trigger": "Any caller ordering in which the `count` passed to tick() includes samples that were pushed at or before the impact — e.g. the natural sensor_thread loop `ring_push(batch, n); detect_impact(); swing_capture_on_impact(...); swing_capture_tick(n);`. With n >= SWING_FOLLOWTHROUGH_SAMPLES the follow-through window closes immediately, while ring_total-1 == armed_impact_gen and zero post-impact samples exist.",
+      "consequence": "desc.span_count claims FT samples past the impact, so in the consumer `newest_gen = gen_oldest + span_count - 1 >= ring_total` and swing_capture_snapshot() returns -EINVAL for every swing. Because the -EINVAL path increments no counter and logs nothing, coaching silently never fires and the failure is invisible in field diagnostics. Partial over-crediting produces the same silent -EINVAL drop."
+    },
+    {
+      "uid": "ctrl-run10#3",
+      "line": 260,
+      "severity": "major",
+      "category": "concurrency-lifetime",
+      "invariant": "The file header declares `armed` and `post_remaining` are 'mutated ONLY from sensor_thread', yet swing_capture_force_expire() — a supervisory/timeout API whose purpose implies a different thread — performs an unguarded, non-atomic test-then-clear on exactly that state, and `armed` is a plain (non-volatile) bool read by tick()/is_armed().",
+      "trigger": "force_expire() called from any thread other than sensor_thread: it reads `armed == true` for the stuck capture, is preempted by the higher-priority sensor_thread which completes that capture in tick() (armed = false, descriptor enqueued) and then arms a brand-new impact via on_impact(); force_expire resumes and executes `armed = false`.",
+      "consequence": "The freshly armed capture is silently cancelled — the swing never reaches ml_thread, and expired_count is incremented for a capture that had already succeeded, so the counter misattributes the fault. The plain-bool reads also permit the compiler to hoist `armed` out of the caller's poll loop, making a cross-thread expire invisible."
+    },
+    {
+      "uid": "ctrl-run10#4",
+      "line": 323,
+      "severity": "major",
+      "category": "concurrency-lifetime",
+      "invariant": "`oldest_resident_gen` must be a conservative (never under-estimated) bound. `ring_total - ring_count` is two independent volatile loads with unspecified evaluation order; the writer can advance between them, and reading `ring_total` first yields a stale-low total combined with a current count.",
+      "trigger": "Ring full (ring_count pinned at SWING_RING_SAMPLES). ml_thread's post-copy guard loads ring_total = T, is preempted by sensor_thread which pushes a FIFO batch of k samples (lapping the start of the span), then loads ring_count = SWING_RING_SAMPLES. Computed oldest = T - RING instead of the true T + k - RING.",
+      "consequence": "The fail-closed post-copy check the whole ADR-004 contract rests on passes for a window whose leading samples were overwritten mid-copy. ml_thread receives a torn window — early samples from the current swing spliced with samples from the following batch — and classifies it as valid; stale_count stays at zero so the corruption is undetectable in the field. Loading ring_count before ring_total (or snapshotting the pair under k_sched_lock) is required for the bound to be conservative."
+    },
+    {
+      "uid": "ctrl-run10#5",
+      "line": 285,
+      "severity": "major",
+      "category": "concurrency-lifetime",
+      "invariant": "The staleness guard must reject a span whose oldest sample's slot is being overwritten. It is written with zero margin (`gen_oldest < oldest_resident_gen`), and SWING_STALENESS_MARGIN — defined in the header and logged at init — is never applied to either comparison. The producer writes the six sample words into ring[ring_head] BEFORE incrementing ring_total, so the counters lag the data destruction by a full slot write.",
+      "trigger": "Ring full, desc->gen_oldest == ring_total - ring_count exactly (the maximum-age span this module routinely produces, since pre_avail is clamped only by SWING_MAX_SAMPLES). sensor_thread overwrites slot (gen_oldest % SWING_RING_SAMPLES) with the next sample; before it executes `ring_total++`, ml_thread runs the pre- or post-copy check, which computes the unchanged oldest_resident_gen and passes.",
+      "consequence": "The first sample (or, on an interleave inside the six-word store, a half-updated sample mixing old and new axes) of the swing window is silently corrupted while both -ESTALE guards report success. Impact-relative features computed from the window's leading edge are wrong with no error and no stale_count increment. The unused SWING_STALENESS_MARGIN indicates the design intended a safety band here that the implementation never applies."
+    },
+    {
+      "uid": "ctrl-run10#6",
+      "line": 174,
+      "severity": "minor",
+      "category": "state-invariant",
+      "invariant": "`armed_impact_gen` must identify a real, already-pushed sample generation; `ring_total - 1` is an unsigned underflow when no sample has ever been pushed.",
+      "trigger": "swing_capture_on_impact() invoked with ring_total == 0 — e.g. an impact event queued from before swing_capture_init() reset the counters, or an impact-detection path fed by a source other than swing_capture_ring_push() during the first sampling window after init.",
+      "consequence": "armed_impact_gen becomes 0xFFFFFFFF and desc.gen_oldest becomes a near-2^32 value. The unsigned newest_gen computation wraps, so the descriptor is rejected with -EINVAL (or, on an unlucky combination, passes the guards and maps to an arbitrary ring offset). The capture is lost with no counter incremented, and the arm/disarm state machine has consumed a debounce window for a swing that can never be delivered."
+    },
+    {
+      "uid": "e7-run01#0",
+      "line": 255,
+      "severity": "major",
+      "category": "state-invariant",
+      "invariant": "The generation-indexed ring must represent a contiguous, gap-free sample stream: sample generation g and generation g+1 must be exactly one ODR period apart, since every downstream time computation (takeback_ms, tempo_ratio_x100, time_to_peak_ms, impact_phase_ms) derives time solely from (index difference)/sample_rate_hz.",
+      "trigger": "sensor.c:933-953 detects an ICM FIFO overflow, calls icm42688_fifo_flush() (discarding >=128 ms of samples) and `continue`s without any ring_push. swing_capture_force_expire() only clears an in-flight `armed` capture; ring[], ring_head, ring_count and ring_total are left untouched, so the pre-gap and post-gap samples end up in adjacent ring slots with adjacent generation numbers. If `armed` was already false the function returns immediately at `if (!armed) { return false; }` and does nothing at all. The very next impact then arms a capture whose pre-impact span is `pre_avail = min(armed_impact_gen, rc-1, SWING_MAX_SAMPLES-1-SWING_FOLLOWTHROUGH_SAMPLES) = 903` samples, which reaches back across the gap for the full ~903 ms following the flush. This is a likely-adjacent sequence, not a rare one: an impact triggers storage_write_shot, whose ZMS GC stall is exactly what sensor.c:958 names as the cause of the FIFO backlog/overflow, and the 500 ms SPOTON_IMPACT_DEBOUNCE_MS permits the next impact well inside the 903 ms poisoned window.",
+      "consequence": "swing_capture_snapshot() returns 0 (the generation-based -ESTALE guard cannot see a time gap — generations are contiguous), swing_segment_extract() finds a 'valid' swing in the spliced data, and swing_dynamics_extract() computes timing over a window that is missing >=128 ms in the middle. A wrong 32-byte coaching record (takeback_ms, tempo_ratio_x100, time_to_peak_ms, impact_phase_ms, jerk_norm) is persisted to the ZMS swing band by ml.c and pushed to the phone as a Coaching Notify. It is silent: expired_count only counts the in-flight capture, and stale_count/qfull_count/missed_count all stay zero, so the corrupted record is indistinguishable from a good one on the device and in the app."
+    },
+    {
+      "uid": "e7-run01#1",
+      "line": 104,
+      "severity": "major",
+      "category": "state-invariant",
+      "invariant": "Every sample in ring[] must have been captured at the rate a descriptor claims in `sample_rate_hz` (always SPOTON_SENSOR_ODR_HZ = 1000 from sensor.c:1103) and must contain live gyro data, because swing_dynamics converts gyro LSB to head speed and index deltas to milliseconds using that single rate.",
+      "trigger": "The FSM SLEEP hook calls power.c -> sensor_enter_low_power(), which writes ACCEL_CONFIG0 = 0x09 (50 Hz) and PWR_MGMT0 = SLEEP_VAL (gyro OFF, accel LP). It does NOT touch FIFO_CONFIG/FIFO_CONFIG1 or INT_SOURCE0, so the FIFO keeps filling at 50 Hz and INT1 watermark still fires (64 pkts / 50 Hz = every 1.28 s). sensor_thread has no power/FSM gate at all (no reference to power_sampling_active or spoton_state_* anywhere in sensor.c), so it keeps draining the FIFO and calling swing_capture_ring_push() on gyro-off, 50 Hz packets, which are appended to the same ring with the same monotonic generation counter. Two reachable paths follow: (a) impact detection also keeps running, so a bump above the 5 g threshold during SLEEP arms a capture whose entire span is LP data yet is stamped rate_hz = 1000; (b) after a WOM wake and sensor_exit_low_power(), it takes 1280 samples (~1.28 s at restored 1 kHz) to flush the LP data out of the ring, so a swing struck inside that window gets a pre-impact span mixing 20 ms-spaced LP samples with 1 ms-spaced LN samples.",
+      "consequence": "swing_capture_snapshot() succeeds (generations are contiguous, nothing is stale) and hands ml_thread a window whose gyro channels are dead/invalid for the LP portion and whose real time base is 20x the declared one. swing_dynamics_extract() therefore reports peak_speed_0p1kmh, takeback_ms, apex_dwell_ms and tempo_ratio_x100 that are off by up to 20x, and that record is written to the ZMS swing band and notified over BLE as a genuine swing. It also silently poisons the session FATIGUE accumulator in ml_pipeline.c (ml_fatigue_update folds peak_speed_0p1kmh into the baseline/recent means), so one bad wake-window swing skews the fatigue decline for the rest of the session. No counter fires."
+    },
+    {
+      "uid": "e7-run02#0",
+      "line": 255,
+      "severity": "major",
+      "category": "failure-recovery",
+      "invariant": "The ring is documented and consumed as a CONTIGUOUS 1 kHz sample stream — sample generation g and g+1 are 1/rate_hz apart. Nothing in the module invalidates the ring after the sample stream is known to have gapped, so recovery from a FIFO loss is incomplete: it clears the armed capture but leaves the pre-gap samples resident and referenceable.",
+      "trigger": "sensor.c detects FIFO overflow (sensor.c:933-946) and calls icm42688_fifo_flush() + swing_capture_force_expire(); or icm42688_read_fifo() hits an SPI error and flushes the FIFO itself (sensor.c:666-671, which does NOT even call force_expire) and the drain loop breaks. In both cases N samples are discarded and never pushed, so ring_total does not advance across the gap. The player's next impact arrives within max_pre = SWING_MAX_SAMPLES-1-SWING_FOLLOWTHROUGH_SAMPLES = 903 samples (~0.9 s) of the flush. This is a realistic sequence: an impact triggers storage_write_shot, a ZMS-GC stall overruns the 128-packet FIFO, the flush happens, and the next stroke in the rally lands well inside 0.9 s.",
+      "consequence": "swing_capture_tick() builds a descriptor whose pre-impact span straddles the discontinuity, and swing_capture_snapshot() passes it as valid (the -ESTALE guard only compares generation counters, which stay self-consistent because the dropped samples were never counted). swing_segment_extract() then locks a takeback start on the far side of the gap, and swing_dynamics derives takeback_ms / tempo_ratio / time_to_peak_ms purely from sample INDEX * (1/rate_hz). The gap is silently reinterpreted as elapsed time, so a swing separated from its 'takeback' by an arbitrary interval is stored to the ZMS swing band and pushed over the Coaching Notify as a fully valid record — wrong coaching delivered with no counter, no log, and no way for the app to tell it from a good swing."
+    },
+    {
+      "uid": "e7-run02#1",
+      "line": 302,
+      "severity": "major",
+      "category": "state-invariant",
+      "invariant": "The whole generation->index mapping rests on ring_head == ring_total % SWING_RING_SAMPLES, i.e. that generation g always lives at ring slot (g mod SWING_RING_SAMPLES). ring_head wraps modulo SWING_RING_SAMPLES (1280) while ring_total wraps modulo 2^32, and 2^32 mod 1280 == 256 != 0, so the identity is destroyed the first time ring_total rolls over.",
+      "trigger": "2^32 samples pushed at SPOTON_SENSOR_ODR_HZ = 1000 (config.h:15) — ~49.7 days of accumulated active sampling since boot/swing_capture_init(), which is called exactly once at main.c:350. After the rollover, for true sample count N = 2^32 + k: ring_head == (256 + k) mod 1280 while the descriptor carries gen == k, so start = k mod 1280 is 256 slots away from where that sample actually sits.",
+      "consequence": "Every snapshot from that point until the next reboot copies a window shifted 256 samples (256 ms) from the span the descriptor asked for — the impact and follow-through are not in it. Neither guard fires: the staleness check and the newest_gen check are pure generation arithmetic that remains internally consistent, so nothing returns -ESTALE or -EINVAL. The result is either permanent -ENODATA drops from swing_segment or, worse, coaching records computed from unrelated samples that are written to ZMS and notified as valid. There is no self-recovery — the offset is permanent for the life of the boot. The in-code comment asserting this is 'degrade-safe' and costs at most 'one spurious -ESTALE drop' is the specific belief that is wrong."
+    },
+    {
+      "uid": "e7-run02#2",
+      "line": 283,
+      "severity": "minor",
+      "category": "concurrency-lifetime",
+      "invariant": "oldest_resident_gen must be computed from a consistent (ring_total, ring_count) pair. The expression is two independent volatile loads with no atomicity between them, and sensor_thread (P2) preempts ml_thread (P5) freely between the two.",
+      "trigger": "Reachable only while ring_count has not yet saturated at SWING_RING_SAMPLES — i.e. the first 1280 samples (~1.28 s) of pushes after swing_capture_init(), where ring_total == ring_count at every quiescent instant. If sensor_thread pushes a batch of M samples between the two loads, the pair is torn: reading ring_total first gives T - (T+M) = -M, which underflows uint32 to ~4.29e9; reading ring_count first gives (C+M) - C = +M. Both are wrong.",
+      "consequence": "swing_capture_snapshot() returns a spurious -ESTALE and ml_thread silently drops a real swing (no coaching notify, no ZMS swing record), while stale_count increments and misattributes the loss to a genuine ring lap — pointing future field triage at the ring-margin design rather than at the torn read. Narrow window (only during the initial ring fill), so impact is limited to a swing captured in the first ~1.3 s of sampling."
+    },
+    {
+      "uid": "e7-run03#0",
+      "line": 255,
+      "severity": "major",
+      "category": "state-invariant",
+      "invariant": "The ring is documented and consumed as a CONTINUOUS 1 kHz sample stream in which generation g and generation g+1 are adjacent in time; after an ICM FIFO overflow+flush the ring silently concatenates pre-gap and post-gap samples, but nothing invalidates the ring contents — only the currently-armed capture is cancelled.",
+      "trigger": "sensor.c:933-953 detects FIFO_FULL, calls icm42688_fifo_flush() (up to 128 samples, ~128 ms, are discarded in the chip) and then swing_capture_force_expire(). force_expire only clears `armed`/`post_remaining`; ring[], ring_head, ring_count and ring_total are untouched, so the pre-gap samples stay resident and 'valid'. The next real impact within ~1.2 s of the overflow arms a capture whose 903-sample pre-impact span straddles the splice point.",
+      "consequence": "swing_capture_snapshot() happily returns 0 (the generation window is intact — no generation numbers were consumed by the dropped samples) and swing_segment/swing_dynamics measure takeback_ms, apex_dwell_ms, time_to_peak_ms and tempo_ratio across a time discontinuity, under-reporting the swing duration by up to the flushed 128 ms. A silently wrong 32-byte coaching record is persisted to the ZMS swing band and notified over BLE with no counter, no flag and no -ESTALE; expired_count only records that one armed capture was cancelled, not that the ring is spliced."
+    },
+    {
+      "uid": "e7-run03#1",
+      "line": 219,
+      "severity": "major",
+      "category": "state-invariant",
+      "invariant": "The descriptor must identify WHICH impact the window belongs to: desc.impact_off/out->impact_idx is documented (swing_capture.h:81, swing_dynamics.h:90) as 'index of ball contact', and the record is stored under desc.session_id/desc.impact_id. The captured span is longer than the impact debounce, and the only consumer re-derives the impact by first-match instead of honouring impact_off, so the span may be resolved to a different impact than the one it was armed for.",
+      "trigger": "max_pre = SWING_MAX_SAMPLES-1-SWING_FOLLOWTHROUGH_SAMPLES = 903 samples ≈ 903 ms of pre-impact history, while SPOTON_IMPACT_DEBOUNCE_MS is only 500 ms (config.h:18). Two detected impacts 500–900 ms apart (ball dribbled on the strings before a serve, frame hit followed by a hit, racket tapped twice) put the earlier impact inside the later one's span. ml_pipeline.c:145 calls swing_segment_extract(g_span.gyro, g_span.accel, g_span.count, rate, &g_seg) — g_span.impact_idx (= desc->impact_off, the authoritative position) is never passed, and swing_segment_extract breaks on the FIRST start+impact pair it finds scanning from index 0 (swing_segment.c:148-151).",
+      "consequence": "The coaching record written to ZMS and notified over BLE for (session_id, impact_id = N) is computed from impact N-1's motion — the earlier impact already produced its own record, so the app joins a duplicate/incorrect swing to shot N. Peak speed, impact_phase_ms and the coaching chain id all describe the wrong stroke, and nothing detects it (all capture-side counters stay zero)."
+    },
+    {
+      "uid": "e7-run03#2",
+      "line": 302,
+      "severity": "minor",
+      "category": "state-invariant",
+      "invariant": "The generation→ring-index mapping 'sample with generation g lives at ring[g % SWING_RING_SAMPLES]' requires ring_head and ring_total to advance in lockstep modulo SWING_RING_SAMPLES. That holds only until ring_total wraps: 2^32 mod 1280 = 256, not 0, so the mapping is permanently shifted by 256 positions after the first wrap.",
+      "trigger": "~49.7 days of continuous 1 kHz streaming (ring_total is uint32 and is incremented once per sample). After the wrap, ring_head is 256 ahead of ring_total % 1280 forever. For the first ~1.28 s, ring_total - ring_count underflows to ~4.29e9 so every snapshot returns -ESTALE; after ring_count is re-covered by ring_total the staleness checks pass again while the index mapping stays wrong.",
+      "consequence": "swing_capture_snapshot() silently copies the wrong 1024 samples (offset by 256 samples / 256 ms of unrelated motion) into the window and returns 0 — no -ESTALE, no counter. Every subsequent swing is analysed from mis-aligned data and a wrong coaching record is persisted and notified until the device reboots. The comment at line 53-55 asserts a wrap 'only risks one spurious -ESTALE drop, which is degrade-safe', which is not what happens."
+    },
+    {
+      "uid": "e7-run03#3",
+      "line": 237,
+      "severity": "minor",
+      "category": "resource-bound",
+      "invariant": "The 2-slot swing_q advertises buffering that the ring's staleness margin cannot back: a descriptor is only snapshot-able while its oldest generation is still resident, which is SWING_STALENESS_MARGIN minus the follow-through overshoot ≈ 193–256 samples (≈193–256 ms at 1 kHz) after enqueue, so a descriptor that has to wait behind another in the queue is stale by construction.",
+      "trigger": "Descriptor is enqueued at ring_total = impact_gen + 1 + F where F is the samples pushed since arming (120..183, since batches are up to ICM42688_FIFO_WM_PACKETS = 64). gen_oldest = impact_gen - 903, oldest resident = impact_gen + 1 + F - 1280, so the head-room is 376 - F samples. If ml_thread (P5) is still inside storage_write_swing (ZMS GC / flash erase) or otherwise delayed past ~200 ms when the descriptor is dequeued, the pre-copy check fires.",
+      "consequence": "The queued swing is dropped with -ESTALE (stale_count++) and its coaching record is lost — the second queue slot buys no resilience at all, so any storage/BLE stall longer than ~200 ms turns into permanent loss of that swing's coaching data rather than a delayed delivery."
+    },
+    {
+      "uid": "e7-run04#0",
+      "line": 260,
+      "severity": "major",
+      "category": "failure-recovery",
+      "invariant": "Samples that the descriptor's span references must form a contiguous, gap-free stretch of the real sample stream. The ring's residency bookkeeping (ring_total/ring_count) models the ring as continuous, so after a FIFO flush the pre-gap samples are still advertised as resident and adjacent to the post-gap ones.",
+      "trigger": "sensor_thread hits ICM FIFO overflow (sensor.c:933) or an SPI burst-read failure (sensor.c:666-671); both call icm42688_fifo_flush(), discarding every buffered packet (up to the 128-packet depth, plus everything dropped while the thread was stalled in stream-to-FIFO mode, ICM42688_FIFO_CONFIG_VAL 0x40). swing_capture_force_expire() clears only `armed`/`post_remaining`; ring_count stays saturated at SWING_RING_SAMPLES and ring_total keeps counting as if nothing was lost. The SPI-error path does not even call force_expire, so an in-flight capture completes straight across the gap. The next impact within ~903 ms (the max_pre reach) then builds a span whose pre-impact portion straddles the discontinuity, and swing_capture_snapshot() copies it with both staleness checks passing.",
+      "consequence": "ml_thread receives a swing_window that splices samples from before and after a lost stretch of stream. swing_segment_extract locks onto the artificial quiet→motion step at the splice (or mis-measures the takeback), and the resulting swing_dynamics record — takeback_ms, tempo_ratio_x100, time_to_peak_ms, impact_phase_ms, peak_speed — is silently wrong. That record is persisted to the ZMS swing band by storage_write_swing() and pushed to the phone as a coaching notify; nothing marks it as suspect and no counter records it (expired_count is not bumped on the SPI-error path). Fabricated coaching data, not a drop."
+    },
+    {
+      "uid": "e7-run04#1",
+      "line": 302,
+      "severity": "minor",
+      "category": "state-invariant",
+      "invariant": "ring_head == ring_total % SWING_RING_SAMPLES, i.e. the sample with generation g always sits at ring index g % SWING_RING_SAMPLES. This holds only while ring_total does not wrap, because 2^32 is not a multiple of SWING_RING_SAMPLES.",
+      "trigger": "ring_total (uint32) wraps after 2^32 samples ≈ 49.7 days of continuous 1 kHz streaming. SWING_RING_SAMPLES = SWING_MAX_SAMPLES + SWING_STALENESS_MARGIN = 1024 + 256 = 1280, and 2^32 mod 1280 = 256 (not 0). ring_head advances via (ring_head + 1) % 1280 across the wrap, so after it ring_head == (ring_total + 256) % 1280 — permanently. For the first ~1.28 s after the wrap `ring_total - ring_count` underflows and every swing is dropped at -ESTALE; once ring_count saturates again the generation arithmetic is self-consistent, so both staleness checks and the newest_gen check pass while the index mapping is off by 256.",
+      "consequence": "After ~49.7 days of uptime every snapshot silently returns a 1024-sample window taken from 256 ring positions away from the requested span (and wrapping across the live write head), i.e. spliced garbage that passes validation. swing_segment/swing_dynamics then produce and persist coaching records derived from the wrong samples with no error and no counter. The in-file comment asserts the opposite ('a wrap mid-capture only risks one spurious -ESTALE drop, which is degrade-safe'), so the hazard is not guarded anywhere."
+    },
+    {
+      "uid": "e7-run04#2",
+      "line": 174,
+      "severity": "minor",
+      "category": "state-invariant",
+      "invariant": "armed_impact_gen must be the write-generation of the impact sample, so that desc->impact_off (copied to out->impact_idx) indexes ball contact within the span. swing_capture.h documents that out->impact_idx is set 'so swing_segment / swing_dynamics can consume it directly'.",
+      "trigger": "sensor.c pushes a whole FIFO batch (swing_capture_ring_push(fifo_buf, packets_read), up to ICM42688_FIFO_WM_PACKETS = 64) and only then runs impact_process_icm_batch() and swing_capture_on_impact(). The impact sample can be anywhere in that batch, so ring_total - 1 is the generation of the LAST sample of the batch, up to 63 samples after the real contact. Any batch where the threshold crossing is not the final packet reproduces it.",
+      "consequence": "out->impact_idx is up to 63 samples (63 ms @ 1 kHz) late, and the span's reserved 120-sample tail is anchored on the batch end rather than on contact, shortening the usable takeback by the same amount. Today the error is latent because ml_pipeline.c passes only g_span.gyro/accel/count/rate to swing_segment_extract, which re-derives the impact; but any consumer following the documented contract (feeding the snapshot straight to swing_dynamics_extract) gets takeback_ms, impact_phase_ms and the 80 ms wobble pre-window computed around the wrong sample."
+    },
+    {
+      "uid": "e7-run05#0",
+      "line": 302,
+      "severity": "major",
+      "category": "state-invariant",
+      "invariant": "The mapping generation -> ring slot must satisfy `ring_head == ring_total % SWING_RING_SAMPLES` for all time, so that `desc->gen_oldest % SWING_RING_SAMPLES` addresses the sample that generation actually occupies.",
+      "trigger": "SWING_RING_SAMPLES == SWING_MAX_SAMPLES + SWING_STALENESS_MARGIN == 1024 + 256 == 1280 (swing_capture.h:55-65), and 2^32 mod 1280 == 256, i.e. 1280 does NOT divide 2^32. `ring_head` is advanced independently as `(ring_head + 1) % 1280` (line 115) while `ring_total` is a free-running uint32_t (line 118). After ring_total wraps 2^32 -> 0 (2^32 samples at SPOTON_SENSOR_ODR_HZ = 1000 Hz = ~49.7 days of cumulative gyro-on sampling; ring_total is only reset by swing_capture_init() at boot, never by the SLEEP/resume power path in power.c), ring_head and (ring_total % 1280) are permanently 256 slots apart.",
+      "consequence": "Every subsequent swing_capture_snapshot() copies a 1024-sample slice that is offset 256 samples (256 ms) from the span the descriptor describes. The staleness guard does NOT catch it — the generation bookkeeping stays self-consistent mod 2^32, so both checks pass and the function fails OPEN, returning wrong sample data as valid. The impact is typically not inside the returned slice, so ml_process_swing either drops every swing (-ENODATA from swing_segment_extract) or, worse, locks onto a spurious peak and persists a wrong 32-byte swing_dynamics record to the ZMS swing band and notifies it over the BLE coaching characteristic. Coaching is permanently broken until a reboot. Additionally, for the ~1280 samples immediately after the wrap, the plain unsigned comparisons `desc->gen_oldest < oldest_resident_gen` (lines 285, 323) and `newest_gen >= ring_total` (line 293) are not wrap-safe and reject valid descriptors with spurious -ESTALE/-EINVAL. The in-code rationale that a wrap 'only risks one spurious -ESTALE drop, which is degrade-safe' is incorrect on both counts."
+    },
+    {
+      "uid": "e7-run05#1",
+      "line": 219,
+      "severity": "major",
+      "category": "resource-bound",
+      "invariant": "The wrap margin left between the enqueued descriptor's span and the live writer must cover the worst-case ml_thread service latency, so that the second SWING_QUEUE_SLOTS slot can actually deliver a swing.",
+      "trigger": "`max_pre` is a constant 1024 - 1 - 120 = 903, so in steady state (ring saturated at 1280) every descriptor is built at the maximum span_count = 1024. Let T0 = ring_total at arm time (armed_impact_gen = T0 - 1) and S = samples pushed between arm and enqueue. S >= SWING_FOLLOWTHROUGH_SAMPLES = 120, and because sensor.c ticks at FIFO-batch granularity with ICM42688_FIFO_WM_PACKETS = 64 (config.h:318), S can reach 183 (119 accumulated, then a 64-packet batch). At enqueue: gen_oldest = T0 - 904, oldest_resident_gen = T0 + S - 1280, so the slack is 376 - S, i.e. only 193..256 samples = 193..256 ms at 1 kHz — not the 256 ms the header asserts. ml_thread is priority 5 and can never preempt sensor_thread at priority 2 (config.h:78-79), and Bluetooth host/controller threads preempt ml. Second swing: impact #2 is >= SPOTON_IMPACT_DEBOUNCE_MS = 500 ms after #1, so it only occupies the second queue slot when ml is *still* busy with swing #1 — a cycle that includes storage_write_swing (ZMS flash, documented as blocking on GC for tens of ms), ble_svc_send_coaching and ble_svc_rawswing_publish. Descriptor #2 then has <=193 ms of residency left.",
+      "consequence": "Whenever ml_thread falls more than ~193 ms behind, the queued descriptor's span is lapped and swing_capture_snapshot() returns -ESTALE; ml.c drops the swing (increments dropped_count) and the player silently loses that shot's coaching notify and its ZMS swing record. The 2-slot swing_q therefore provides essentially no buffering: any descriptor that actually has to wait in the queue is the one most likely to expire. Because the whole span is always built at the 1024 maximum, there is no way to trade span length for margin at runtime."
+    },
+    {
+      "uid": "e7-run05#2",
+      "line": 255,
+      "severity": "major",
+      "category": "failure-recovery",
+      "invariant": "A descriptor may only be enqueued when its span is a temporally CONTIGUOUS run of samples at sample_rate_hz; a gap in the sample stream must abort the armed capture.",
+      "trigger": "The module's only integrity notion is generation contiguity, and a hardware FIFO drop preserves it: dropped samples are never pushed, so ring_total/ring_count stay perfectly consistent across the discontinuity. Gap recovery is entirely caller-driven via swing_capture_force_expire(), and sensor.c misses two reachable gap sources. (1) icm42688_fifo_overflow() is polled ONCE per sensor wake, before the drain loop (sensor.c:933); an overflow that occurs *during* the multi-iteration drain is not seen until the next wake, by which time swing_capture_tick() has already counted its 120 samples across the gap and enqueued. (2) sensor.c:665-670 — on an SPI burst-read error icm42688_read_fifo() calls icm42688_fifo_flush() and returns, and sensor_thread_fn just `break`s out of the drain loop (sensor.c:981-983) without calling swing_capture_force_expire(). Both are documented as following ZMS-GC stalls, the same stalls that produce the backlog.",
+      "consequence": "swing_capture_tick() completes the follow-through across the discontinuity and enqueues a descriptor whose 1024-sample span splices pre-gap and post-gap samples as if they were consecutive 1 ms apart. swing_capture_snapshot() passes both staleness checks and returns 0, so the pipeline fails OPEN: swing_segment_extract / swing_dynamics_extract compute peak_speed, tempo_ratio, time_to_peak and jerk from a signal with a fabricated step discontinuity, and ml.c persists that wrong 32-byte record to the ZMS swing band and notifies it over BLE as a genuine measurement. No counter fires — stale/missed/expired/qfull all stay 0 — so the corrupt record is indistinguishable from a good one in the field."
+    },
+    {
+      "uid": "e7-run06#0",
+      "line": 257,
+      "severity": "major",
+      "category": "failure-recovery",
+      "invariant": "A captured span must contain a contiguous, uniformly-sampled stretch of the 1 kHz sample stream. The module's only integrity guard is generation-based (gen_oldest vs ring_total - ring_count), which detects ring OVERWRITE but is blind to a stream DISCONTINUITY, because ring_head/ring_total keep advancing contiguously across lost samples and ring_count never decreases.",
+      "trigger": "sensor.c:933-953: on ICM FIFO overflow (documented as reachable after a ZMS-GC stall) the driver calls icm42688_fifo_flush(), silently discarding every buffered sample, then calls swing_capture_force_expire(). force_expire returns immediately when !armed (the common case — overflow rarely lands inside a 120-sample follow-through) and even when armed it only clears `armed`/`post_remaining`; it never touches ring[], ring_head, ring_count or ring_total. The very next impact (allowed 500 ms later by the debounce) builds a descriptor with pre_avail up to 903 samples, i.e. gen_oldest = armed_impact_gen - 903, spanning generations written both before and after the flush. The same hole exists across suspend/resume: sensor_exit_low_power() (sensor.c:824-874) restores 1 kHz LN without flushing the FIFO, so packets captured under PWR_MGMT0=0x22 (gyro OFF, accel 50 Hz LP, FIFO_CONFIG1 still 0x07 so gyro fields are the invalid-sample sentinel) are pushed into the same ring and are indistinguishable from real 1 kHz gyro+accel samples.",
+      "consequence": "swing_capture_snapshot() returns 0 for a window that is physically a splice of two disjoint time intervals, stamped sample_rate_hz = 1000. ml_pipeline then runs swing_segment_extract / swing_dynamics_extract over it, and every temporal feature (takeback_ms, apex_dwell_ms, time_to_peak_ms, impact_phase_ms, tempo_ratio_x100) is computed against a false time base. The resulting 32-byte swing_dynamics record and its coach_chain_id are persisted to the ZMS swing band and notified over BLE as a normal, valid coaching result — fabricated feedback with no counter incremented and no flag set (stale/missed/expired/qfull all stay zero, which is exactly the diagnostic blind spot hil_stack.c:338-377 was written to chase). The mirrored gyro-invalid case instead reliably fails segmentation, silently dropping the first swings after every wake."
+    },
+    {
+      "uid": "e7-run06#1",
+      "line": 302,
+      "severity": "minor",
+      "category": "state-invariant",
+      "invariant": "The generation→ring-index mapping `ring_index(g) == g % SWING_RING_SAMPLES` must hold for every generation, i.e. ring_head must stay equal to ring_total % SWING_RING_SAMPLES. This holds only while ring_total is an exact count; it is destroyed by the uint32 wrap because SWING_RING_SAMPLES (1280) does not divide 2^32 (2^32 mod 1280 == 256).",
+      "trigger": "ring_total reaches 2^32 (2^32 samples at 1 kHz ≈ 49.7 days of uninterrupted uptime without a reboot, since swing_capture_init() is called once from main.c:350 and nothing re-inits). ring_head continues from (true_total mod 1280) while ring_total restarts at 0, so from that instant ring_head == (ring_total % 1280 + 256) % 1280 forever after.",
+      "consequence": "Every subsequent snapshot reads a window shifted 256 samples (256 ms) away from the samples the descriptor actually describes, while both staleness checks still pass — the module returns 0 and hands ml_pipeline a wrong-but-well-formed window containing no impact (or someone else's data), producing garbage coaching persisted to ZMS and pushed over BLE, permanently, with no counter incremented. The in-code comment at line 53-56 asserts the wrap costs at most 'one spurious -ESTALE drop, which is degrade-safe'; that claim is wrong — the damage is a permanent index desync, not a single drop. Reachability is low on a battery device (uptime rarely approaches 50 days), hence minor, but the documented safety rationale should not be relied on."
+    },
+    {
+      "uid": "e7-run07#0",
+      "line": 255,
+      "severity": "major",
+      "category": "state-invariant",
+      "invariant": "Samples in ring[] must be contiguous in time, so that a captured span never spliced across a sample-stream gap is handed to the segmenter. The module is told about the gap (force_expire on FIFO overflow) but only the armed-capture state is discarded — the ring history that will feed the NEXT capture is left as-is.",
+      "trigger": "sensor.c:933-953: ZMS-GC (or any) stall causes an ICM FIFO overflow; the FIFO is flushed (>=128 samples, and everything lost during the stall, never reach ring_push) and swing_capture_force_expire() is called. Note it also returns immediately when !armed, which is the common case — so a gap while unarmed is not recorded at all. Any impact within the next ~903 samples (~0.9 s) arms and, 120 samples later, enqueues a descriptor whose pre-window (pre_avail up to SWING_MAX_SAMPLES-1-120 = 903) reaches back across the discontinuity.",
+      "consequence": "swing_capture_snapshot() succeeds (the generation check only proves residency, not continuity) and swing_segment anchors the takeback in pre-gap samples. takeback_ms, tempo_ratio_x100, time_to_peak_ms and apex_dwell_ms are computed over a >=128 ms time hole, producing a wrong 32-byte swing_dynamics record that is persisted to the ZMS swing band and pushed over the BLE coaching notify with no low-confidence/degenerate flag — silent bad coaching data, exactly the failure mode the fail-closed design elsewhere avoids. A fix needs no allocation: record the gap (e.g. reset ring_count to 0, keeping ring_total monotonic) unconditionally on the overflow path so pre_avail cannot reach past it."
+    },
+    {
+      "uid": "e7-run07#1",
+      "line": 231,
+      "severity": "major",
+      "category": "other",
+      "invariant": "The swing scored and stored under (session_id, impact_id) must be the swing whose impact armed that capture. The descriptor carries the impact's exact position (impact_off), but the span handed to ml_thread is up to 903 ms of pre-impact history and the consumer re-derives the impact from the head of the span instead of using impact_off, so the association is not enforced anywhere.",
+      "trigger": "Two >5 g contacts 500-650 ms apart (both pass the 500 ms debounce: a frame mishit followed by a re-hit, or a racket/ground tap before the stroke). The second contact's span [impact-903, impact+120] then fully contains the earlier contact together with its preceding quiet run and takeback rise. ml_pipeline.c:145 calls swing_segment_extract(g_span.gyro, g_span.accel, g_span.count, g_span.sample_rate_hz, &g_seg) — desc->impact_off / g_span.impact_idx are not passed — and swing_segment.c:148-151 latches the FIRST impact after a confirmed start and breaks.",
+      "consequence": "The dynamics of the EARLIER contact (speed, face angle, tempo, quality) are extracted, then stamped with the CURRENT impact's session_id/impact_id at ml_pipeline.c:153 and written to ZMS + sent as the coaching notify. The app joins it to the wrong shot and displays another stroke's metrics as this one's; the fatigue accumulator is also fed the duplicated speed. Nothing counts or flags it — every capture-side counter stays zero."
+    },
+    {
+      "uid": "e7-run07#2",
+      "line": 302,
+      "severity": "minor",
+      "category": "state-invariant",
+      "invariant": "\"The sample with generation g sits at ring position (g mod SWING_RING_SAMPLES)\" — this holds only while ring_total is the true push count. SWING_RING_SAMPLES is 1280 and 2^32 mod 1280 = 256, so 1280 does not divide the uint32 wrap point and the identity breaks permanently once ring_total wraps.",
+      "trigger": "2^32 samples pushed (~49.7 days of 1 kHz streaming, or longer with sleep windows) — ring_head keeps the true modulo while ring_total restarts at 0, leaving a fixed 256-slot skew. The -ESTALE guard cannot catch it: it only compares generation differences (ring_total - ring_count vs gen_oldest), which stay self-consistent after the wrap.",
+      "consequence": "swing_capture_snapshot() returns 0 while copying a window shifted 256 samples earlier than the descriptor's span, so the impact and follow-through fall outside the snapshot. From that point until reboot every swing is either dropped at -ENODATA or scored from the wrong samples and stored/notified as valid — silent, permanent, and mis-documented at line 53 as costing at most one spurious -ESTALE drop."
+    },
+    {
+      "uid": "e7-run08#0",
+      "line": 219,
+      "severity": "major",
+      "category": "state-invariant",
+      "invariant": "The captured span must contain exactly one candidate swing — the impact identified by `impact_off` — so that the record persisted/notified under (session_id, impact_id) describes THAT impact.",
+      "trigger": "Two legal impacts ~500-870 ms apart (rally exchange / quick block; the 500 ms SPOTON_IMPACT_DEBOUNCE_MS is the only spacing floor). max_pre = 1024-1-120 = 903, so the second descriptor's pre-roll is up to 903 samples = 903 ms at SPOTON_SENSOR_ODR_HZ=1000 — long enough to contain the ENTIRE previous swing (SWING_QUIET_SAMPLES=30 ms of quiet + a <=370 ms takeback + impact N-1). swing_segment_extract (swing_segment.c:138-152) scans the span from index 0 and `break`s on the FIRST confirmed (start, impact) pair, and it is never given desc->impact_off (ml_pipeline.c:145 passes only gyro/accel/count/rate), so it locks onto impact N-1.",
+      "consequence": "ml_pipeline.c:153 then stamps the OLD swing's dynamics with the NEW descriptor's join keys: `swing_dynamics_extract(&g_seg, desc->session_id, desc->impact_id, out)`. A 32-byte swing_dynamics record is written to the ZMS swing band and pushed over the coaching notify claiming to be impact N while carrying impact N-1's takeback_ms / peak_speed / impact_phase. The app sees duplicated metrics under two impact_ids, shot N's real coaching never exists, and the fatigue accumulator (ml_fatigue_update) double-counts the same speed. Silent — no counter increments, ret is 0."
+    },
+    {
+      "uid": "e7-run08#1",
+      "line": 257,
+      "severity": "major",
+      "category": "failure-recovery",
+      "invariant": "After a FIFO overflow discards samples, the ring must not present the pre-gap history as temporally contiguous with the post-gap history — generation index is used as a proxy for time (takeback_ms = impact_idx*1000/rate).",
+      "trigger": "sensor.c:933-953: FIFO overflow → icm42688_fifo_flush() discards up to the full 128-packet FIFO plus the stall duration (the code itself cites a ZMS-GC stall backlog), then calls swing_capture_force_expire(). force_expire only clears `armed`/`post_remaining`; when no capture was armed it returns false at line 258 having done nothing at all. ring_count/ring_total/ring_head are untouched, so the pre-flush samples stay 'resident' with generations contiguous to the post-flush ones. The next impact within ~903 ms builds a span whose pre-roll straddles the discarded interval.",
+      "consequence": "The 12 KB snapshot handed to swing_segment_extract contains a step discontinuity in the middle of the takeback. swing_segment either reads it as a spurious quiet→motion start / a false 5 g accel crossing, or accepts a start that is physically ~100+ ms distant from the impact. The persisted+notified swing_dynamics record then carries wrong takeback_ms, apex_dwell_ms, tempo_ratio_x100 and impact_phase_ms with no error return and no diagnostic counter — exactly the same hazard the code recognizes for the in-flight capture but not for the ring history."
+    },
+    {
+      "uid": "e7-run08#2",
+      "line": 302,
+      "severity": "minor",
+      "category": "state-invariant",
+      "invariant": "ring_head == ring_total % SWING_RING_SAMPLES — the reader maps generation g to ring slot (g % SWING_RING_SAMPLES) and depends on that identity holding for all time.",
+      "trigger": "ring_total wraps 2^32. SWING_RING_SAMPLES = 1280 = 2^8*5 does NOT divide 2^32 (2^32 mod 1280 = 256), so the free-running mod-1280 `ring_head` and the free-running mod-2^32 `ring_total` permanently desynchronise by 256 at the wrap. Reached after ~49.7 days of continuous 1 kHz sampling without a swing_capture_init() (init only runs from main.c:350 at boot).",
+      "consequence": "The comment at lines 53-55 claims a wrap costs at most 'one spurious -ESTALE drop, which is degrade-safe'. It does not: after the wrap every snapshot reads slot (g % 1280) which now holds generation g-256, so the returned window is shifted 256 samples earlier. The intended impact lands at index impact_off+256, which exceeds span_count (903+256 > 1024) and falls outside the copied span, so swing_segment_extract returns -ENODATA (or worse, locks onto unrelated older motion) for EVERY swing until the device reboots. Coaching is permanently dead with no self-recovery; the -ESTALE counter does not even flag it after the first ~1280 samples."
+    },
+    {
+      "uid": "e7-run08#3",
+      "line": 283,
+      "severity": "minor",
+      "category": "concurrency-lifetime",
+      "invariant": "The pair (ring_total, ring_count) must be read consistently; `ring_total - ring_count` must never evaluate to a value the writer never held.",
+      "trigger": "ring_push increments ring_count BEFORE ring_total (lines 116-118). ml_thread's `ring_total - ring_count` is two separate non-atomic volatile loads with unspecified evaluation order. If sensor_thread (P2) preempts ml_thread (P5) between the two loads — or the loads straddle the ring_count++/ring_total++ pair — the reader can observe ring_count == ring_total + 1 while the ring is still filling, giving oldest_resident_gen = 0xFFFFFFFF. Window: the first SWING_RING_SAMPLES (1280) pushes after swing_capture_init(), i.e. ~1.28 s after sensor_thread comes online, before ring_count saturates.",
+      "consequence": "Any swing captured in that startup window is dropped with a spurious -ESTALE (and the same underflow in the post-copy re-check at line 335 can discard an otherwise-valid completed copy). Lost coaching record plus a misleading stale_count that points HIL triage at ring-lap rather than at a startup read race."
+    },
+    {
+      "uid": "e7-run09#0",
+      "line": 260,
+      "severity": "major",
+      "category": "failure-recovery",
+      "invariant": "Samples that a descriptor's span maps to must be contiguous in time at the declared sample_rate_hz — consecutive write-generations must correspond to consecutive 1 ms sample periods. The generation-based -ESTALE guard only detects ring LAP (overwrite), never a time DISCONTINUITY in the stored stream.",
+      "trigger": "sensor.c:933-953 — an ICM FIFO overflow (documented as reachable after a ZMS-GC stall blocks sensor_thread past the ~128-packet HW FIFO depth) calls icm42688_fifo_flush(), silently discarding ~130 ms of samples that are never pushed into ring[]. swing_capture_force_expire() then clears only `armed`/`post_remaining`; ring[], ring_head, ring_count and ring_total are left intact, so the discarded samples leave no gap marker. The next impact within ~903 ms (max_pre, swing_capture.c:219) builds a descriptor whose pre-impact span straddles the hole. The same holds for the SLEEP path: sensor_enter/exit_low_power() (sensor.c:725-875) neither flushes the FIFO nor invalidates the ring, so post-resume captures can splice in samples taken minutes earlier at the 50 Hz LP accel rate with the gyro powered OFF.",
+      "consequence": "swing_capture_snapshot() returns 0 (guard passes — nothing was overwritten) and hands ml_thread a window that swing_segment/swing_dynamics treat as uniformly sampled at desc->sample_rate_hz=1000. When the takeback start lands before the hole and the impact after it, every index-derived temporal metric (takeback_ms, tempo_ratio_x100, time_to_peak_ms, apex dwell, jerk) is wrong by the missing ~130 ms, and the bogus record is persisted to the ZMS swing band (storage_write_swing) and notified over the coaching characteristic as a normal, valid swing. Silent wrong data, not a counted drop — none of stale/missed/expired/qfull increments, so the HIL drop-cause table (hil_stack.c:375) reports a clean run."
+    },
+    {
+      "uid": "e7-run09#1",
+      "line": 302,
+      "severity": "minor",
+      "category": "state-invariant",
+      "invariant": "The generation→ring-index mapping `index = generation % SWING_RING_SAMPLES` holds only while the monotonic generation counter is exact. It requires 2^32 to be a multiple of SWING_RING_SAMPLES; it is not (2^32 mod 1280 == 256), so the mapping breaks permanently at the uint32 wrap, not just for one capture.",
+      "trigger": "ring_total (uint32_t) wraps 0xFFFFFFFF→0 after 2^32 pushed samples (~49.7 days of continuous 1 kHz sampling; ~6 days if the ODR is ever raised to 8 kHz as the FRF path does). ring_head keeps its true modulo-1280 phase, but generations restart at 0, so from that point on the sample with generation g physically lives at (g + 256) % 1280 while swing_capture_snapshot computes g % 1280.",
+      "consequence": "Every subsequent snapshot copies a window shifted 256 samples (256 ms) from the intended span, and the -ESTALE comparisons (desc->gen_oldest < ring_total - ring_count) also compare across the discontinuity, so the fail-closed guard does not fire. ml_thread receives a plausible-looking window of the wrong 256 ms of motion and persists/notifies coaching computed from it — silent data corruption on a long-running device, not the single spurious -ESTALE drop the comment at lines 53-56 promises."
+    },
+    {
+      "uid": "e7-run10#0",
+      "line": 104,
+      "severity": "major",
+      "category": "state-invariant",
+      "invariant": "Every sample in the ring was captured at the rate stamped into the descriptor (`sample_rate_hz`), with all six axes live. The ring is rate-agnostic: `ring_push` appends whatever the FIFO delivers and `on_impact` stamps a compile-time constant rate, with nothing tying the two together.",
+      "trigger": "System FSM enters SLEEP → power.c calls sensor_enter_low_power() (sensor.c:725), which sets PWR_MGMT0=0x22 (gyro fully OFF) and ACCEL_CONFIG0 to the 50 Hz LP value. FIFO/INT1/watermark config is untouched, so sensor_thread keeps waking on the 64-packet watermark (every ~1.28 s at 50 Hz) and keeps calling swing_capture_ring_push(fifo_buf, packets_read) at sensor.c:1025. Any knock past the impact gate (5 g, or 0.5 g in tap mode) on those LP samples reaches sensor.c:1096-1104; swing_capture_resolve_session_id() falls back to the non-zero natural-play session id, so swing_capture_on_impact(cap_sid, cap_iid, SPOTON_SENSOR_ODR_HZ) arms with rate_hz=1000 over samples actually taken 20 ms apart with gyro registers powered down. The same mislabelling covers the 1.28 s after wake (sensor_exit_low_power), during which the ring still holds up to SWING_RING_SAMPLES LP samples that a fresh span reaches back into.",
+      "consequence": "A racket knocked in the bag while the device sleeps produces a full swing_dynamics record built from 50 Hz, gyro-dead samples labelled 1000 Hz: takeback_ms / time_to_peak_ms / impact_phase_ms / tempo_ratio are 20x wrong, peak_speed and wobble are computed from the gyro-OFF sentinel, and the record is persisted to the ZMS swing band and pushed over the Coaching notify as a real shot (it also burns an impact_id). The device reports fabricated coaching for an event that was not a swing."
+    },
+    {
+      "uid": "e7-run10#1",
+      "line": 255,
+      "severity": "major",
+      "category": "failure-recovery",
+      "invariant": "Consecutive generations in the ring are consecutive in time (1 ms apart at 1 kHz), so a span of N generations is N ms of continuous motion. After a dropped-sample event the ring splices non-adjacent samples with no marker, and the recovery hook does not invalidate them.",
+      "trigger": "ICM FIFO overflow (sensor.c:933-953: overflow → icm42688_fifo_flush() discards up to 128 unread packets → swing_capture_force_expire()). force_expire only clears `armed`/`post_remaining`; ring[], ring_head, ring_count and ring_total are left untouched, so generation g and g+1 now straddge a >=128 ms hole. The next impact within SWING_RING_SAMPLES samples (1.28 s) arms a capture whose 903-sample pre-window reaches across the splice. The same hazard exists across the LN<->LP transition. Overflow is reachable exactly when it hurts: the sensor thread blocks in storage_write_shot on ZMS GC right after an impact, so an overflow-then-impact pair inside 1.28 s is the realistic case (a mishit followed by a quick second contact).",
+      "consequence": "swing_segment scans a span in which pre-gap and post-gap motion sit adjacent, so it can lock onto a start/impact pair that never happened contiguously, and every sample-count-derived feature (takeback_ms, time_to_peak_ms, tempo_ratio_x100, jerk_norm) is computed over a window that is missing >=128 ms of real time. The resulting bogus 32-byte record is written to ZMS and notified as valid coaching; nothing counts it, so the corruption is invisible in the diagnostics."
+    },
+    {
+      "uid": "e7-run10#2",
+      "line": 219,
+      "severity": "major",
+      "category": "state-invariant",
+      "invariant": "The captured span must contain exactly one swing, so that the segmenter's 'first start+impact pair wins' contract selects THIS impact. The pre-window is unconditionally maximal and is never bounded by the previous impact's generation.",
+      "trigger": "max_pre = SWING_MAX_SAMPLES - 1 - SWING_FOLLOWTHROUGH_SAMPLES = 903, i.e. the span always reaches ~903 ms before the impact, while SPOTON_IMPACT_DEBOUNCE_MS (config.h:18) explicitly ALLOWS a second impact 500 ms after the first. For two contacts 500-900 ms apart (net volley exchange, double frame contact, or tap-mode data collection at the 0.5 g gate), impact N's samples — including its own start, when its takeback is shorter than the remaining ~300-400 ms of span — lie inside impact N+1's span. swing_segment_extract() (swing_segment.h:131-143) returns the FIRST start-followed-by-impact pair it finds and truncates head-first only when the span exceeds SWING_MAX_SAMPLES, which this span never does.",
+      "consequence": "The coaching record for shot N+1 is computed from shot N's samples but stamped with desc->session_id/impact_id of N+1: the app joins a duplicate of the previous swing's features to the new shot, and the real N+1 swing is never analysed. Also feeds the fatigue accumulator (ml_pipeline.c:165) with a duplicated speed, biasing the cross-shot decline evidence."
+    },
+    {
+      "uid": "e7-run10#3",
+      "line": 285,
+      "severity": "major",
+      "category": "concurrency-lifetime",
+      "invariant": "A descriptor accepted into swing_q must still be snapshot-able when ml_thread gets to it — the queue depth and the ring's wrap margin must be consistent. They are not: the margin covers ~0.2 s while the queue is allowed to hold a descriptor across a full ml service cycle.",
+      "trigger": "In steady state the span is [impact_gen-903, impact_gen+120] and ring_total at enqueue is impact_gen+1+post_pushed with post_pushed in [120, 183] (batches are <= ICM42688_FIFO_WM_PACKETS = 64, so the follow-through overshoots). gen_oldest is overwritten once ring_total reaches gen_oldest + SWING_RING_SAMPLES = impact_gen + 377, leaving only 377 - (1+post_pushed) = 193..256 samples, i.e. 193-256 ms at 1 kHz, from enqueue to expiry. SWING_QUEUE_SLOTS is 2, and ml_thread only snapshots after finishing the previous swing, whose tail includes storage_write_swing → ZMS GC (documented as a tens-of-ms-plus blocking write in ml.c:9-13 and sensor.c:1057-1061) plus the BLE notify and raw-window publish. Any ml cycle whose remaining work exceeds that ~200 ms window while a second descriptor sits queued expires it.",
+      "consequence": "The queued swing is silently dropped at -ESTALE (stale_count++ / ml dropped_count++): the player gets no coaching notify and no ZMS swing record for that shot, and the loss clusters exactly on the flash-GC events that also stall the sensor path, so a rally can lose several consecutive swings. The second queue slot is effectively unusable whenever ml's per-swing work exceeds the margin — it accepts descriptors it cannot honour instead of dropping them at enqueue where qfull_drop_count would name the cause."
+    },
+    {
+      "uid": "cdx-run01#0",
+      "line": 51,
+      "severity": "major",
+      "category": "concurrency-lifetime",
+      "invariant": "The post-copy staleness check must be synchronized and ordered after every ring read so a span overwritten during the copy can never be accepted.",
+      "trigger": "ml_thread begins copying after queue or storage delay has consumed most of the staleness margin, then the higher-priority sensor_thread preempts it and pushes enough samples to overwrite the descriptor's oldest slots. The reader and writer access ring data and generation state without atomics, a lock, or another C memory-model synchronization primitive.",
+      "consequence": "volatile neither establishes a happens-before relationship nor orders the ordinary ring loads relative to the generation reload. The copy therefore has a C data race, and compiler reordering can render the post-check ineffective, allowing a torn window containing samples from different generations to be processed and persisted as valid coaching data."
+    },
+    {
+      "uid": "cdx-run01#1",
+      "line": 174,
+      "severity": "major",
+      "category": "state-invariant",
+      "invariant": "armed_impact_gen must identify the FIFO sample that actually crossed the impact threshold.",
+      "trigger": "The production caller pushes an entire FIFO batch of up to 64 samples before impact_process_icm_batch scans it, and that scanner returns only a boolean. If the threshold crossing occurs before the final packet, swing_capture_on_impact still records ring_total - 1, which is the batch's last sample.",
+      "consequence": "The recorded impact position is late by up to 63 ms. For a capacity-sized window this removes the same amount of pre-impact history, so takebacks near the supported maximum duration can lose their quiet/onset region and be dropped with -ENODATA or produce biased temporal dynamics."
+    },
+    {
+      "uid": "cdx-run01#2",
+      "line": 302,
+      "severity": "major",
+      "category": "state-invariant",
+      "invariant": "A stored generation must map to the physical slot containing that generation across every supported ring_total value, including its documented uint32_t wrap.",
+      "trigger": "After 2^32 samples have been pushed, ring_total wraps to zero. SWING_RING_SAMPLES is 1280 and 2^32 modulo 1280 is 256, so the physical ring_head is slot 256 when the wrapped generation is zero, while the snapshot mapping selects slot zero.",
+      "consequence": "After approximately 49.7 cumulative days at 1 kHz, snapshots initially fail the non-wrap-safe staleness comparisons and then permanently read samples displaced by 256 slots. Swings are consequently dropped or processed from unrelated IMU data until reboot; the documented claim that wrap can cause only one spurious -ESTALE is false."
+    },
+    {
+      "uid": "cdx-run02#0",
+      "line": 174,
+      "severity": "major",
+      "category": "state-invariant",
+      "invariant": "armed_impact_gen must identify the actual threshold-crossing sample, so the capture retains the promised 903 pre-impact samples.",
+      "trigger": "An impact occurs before the final packet of a FIFO batch. The caller pushes the entire batch before impact_process_icm_batch() scans it, and that scanner returns only a boolean, so this function records the batch's last sample as the impact. Production batches contain up to 64 packets.",
+      "consequence": "The capture loses up to 63 ms of valid pre-impact motion and substitutes extra post-impact data. Swings whose takeback or required quiet-to-motion boundary lies in that lost interval are rejected by segmentation or produce truncated dynamics and coaching."
+    },
+    {
+      "uid": "cdx-run02#1",
+      "line": 302,
+      "severity": "major",
+      "category": "state-invariant",
+      "invariant": "A generation value must continue mapping to its physical ring slot for the full device uptime.",
+      "trigger": "ring_total wraps after 2^32 pushes, approximately 49.7 days of continuous 1 kHz sampling. SWING_RING_SAMPLES is 1280, which does not divide 2^32; therefore wrapped generation zero is physically at slot 256, not slot zero. The unsigned staleness comparisons also cease to describe chronological order across this wrap.",
+      "consequence": "Immediately around the wrap, valid swings are rejected as stale. Thereafter snapshots read data displaced by 256 samples, generally omitting the real impact and causing persistent coaching drops or corrupted windows until reboot."
+    },
+    {
+      "uid": "cdx-run02#2",
+      "line": 260,
+      "severity": "minor",
+      "category": "failure-recovery",
+      "invariant": "Samples retained as one capture span must belong to a contiguous, constant-rate stream.",
+      "trigger": "The sensor caller detects a FIFO overflow, flushes the hardware FIFO, and calls swing_capture_force_expire(). This function disarms an active capture but leaves ring_count, ring_total, and all pre-gap samples valid. An impact within roughly the next second can therefore select a span crossing the lost-sample gap.",
+      "consequence": "Segmentation treats pre-overflow and post-overflow samples as adjacent 1 kHz data. It can pair a pre-gap swing start or quiet run with a post-gap impact, producing incorrect dynamics, or reject and lose the first swing after recovery."
+    },
+    {
+      "uid": "cdx-run03#0",
+      "line": 214,
+      "severity": "major",
+      "category": "state-invariant",
+      "invariant": "A descriptor for the current impact must produce a span in which downstream segmentation selects that impact, not an earlier resident impact.",
+      "trigger": "Two accepted impacts occur roughly 500–900 ms apart, which is permitted by the 500 ms detector debounce, and the previous swing's takeback and impact remain inside the second descriptor's up-to-903-sample pre-impact span. ml_process_swing() passes the entire span to swing_segment_extract(), which scans from the beginning and commits the first start/impact pair without using desc->impact_off.",
+      "consequence": "The previous swing is processed a second time but persisted and notified under the new session/impact identifiers, while the current swing is never analyzed."
+    },
+    {
+      "uid": "cdx-run03#1",
+      "line": 302,
+      "severity": "major",
+      "category": "state-invariant",
+      "invariant": "The generation-to-ring-index mapping must remain consistent for the entire device uptime, including after ring_total wraps.",
+      "trigger": "After 2^32 samples have been pushed, about 49.7 cumulative days at 1 kHz, ring_total wraps to zero. SWING_RING_SAMPLES is 1280 and 2^32 modulo 1280 is 256, so the physical ring head is index 256 while wrapped generation zero is mapped to index zero.",
+      "consequence": "Descriptors initially fail the wrap-unsafe range checks; after ring_total reaches 1280 again, snapshots succeed but read samples shifted by 256 ring slots. Swing windows and coaching records remain corrupted until reboot."
+    },
+    {
+      "uid": "cdx-run03#2",
+      "line": 257,
+      "severity": "major",
+      "category": "failure-recovery",
+      "invariant": "Samples presented as a contiguous fixed-rate swing span must not cross a FIFO loss or flush boundary.",
+      "trigger": "A FIFO overflow occurs during pre-impact motion before the capture is armed. sensor_thread calls swing_capture_force_expire(), but because armed is false the function returns without invalidating the ring; samples read after the FIFO flush are appended directly after pre-overflow samples.",
+      "consequence": "The next capture can treat a gap containing lost samples as contiguous 1 kHz data, corrupting takeback duration, integration-derived dynamics, segmentation, and the coaching record stored or sent for that impact."
+    },
+    {
+      "uid": "cdx-run03#3",
+      "line": 174,
+      "severity": "minor",
+      "category": "state-invariant",
+      "invariant": "armed_impact_gen and impact_off must identify the actual threshold-crossing sample.",
+      "trigger": "sensor_thread pushes an entire FIFO batch of up to 64 samples before scanning it for impact. If the crossing occurs anywhere except the final sample, swing_capture_on_impact() still records ring_total - 1, the batch's final sample, as the impact.",
+      "consequence": "The captured pre-impact history is shortened by up to 63 ms and the advertised impact offset is wrong. Long takebacks whose onset lies in the discarded portion can fail segmentation and be dropped."
+    },
+    {
+      "uid": "cdx-run04#0",
+      "line": 302,
+      "severity": "major",
+      "category": "state-invariant",
+      "invariant": "A sample generation must map to the same ring slot before and after the generation counter wraps.",
+      "trigger": "The device accumulates 2^32 samples, approximately 49.7 days of active 1 kHz sampling, and subsequently processes another swing.",
+      "consequence": "Because 2^32 modulo the 1280-sample ring is 256, every post-wrap generation maps 256 slots away from its actual data. After an initial interval of false stale drops, snapshots can pass validation while copying a window that ends before the real impact, causing persistent coaching drops or dynamics computed from unrelated samples until reboot."
+    },
+    {
+      "uid": "cdx-run04#1",
+      "line": 174,
+      "severity": "major",
+      "category": "state-invariant",
+      "invariant": "armed_impact_gen must identify the FIFO sample that crossed the impact threshold.",
+      "trigger": "An impact occurs anywhere except the final sample of a production FIFO batch. The caller pushes the entire batch before detection, and impact_process_icm_batch reports only that an impact occurred, without returning its sample offset.",
+      "consequence": "The impact is recorded up to 63 samples late for a 64-packet batch. At full window size this discards the same amount of available pre-impact history, so long valid swings can lose their takeback onset or required quiet run, producing dropped swings or shortened and incorrect timing metrics."
+    },
+    {
+      "uid": "cdx-run04#2",
+      "line": 283,
+      "severity": "minor",
+      "category": "concurrency-lifetime",
+      "invariant": "The live oldest-resident generation must be calculated from a coherent pair of ring_total and ring_count values.",
+      "trigger": "Before ring_count saturates, sensor_thread preempts ml_thread between the two volatile loads in `ring_total - ring_count` and pushes a FIFO batch before the second load occurs.",
+      "consequence": "The mixed old/new values can underflow or produce a falsely advanced oldest generation, causing a valid early-boot swing to be rejected as stale and lost."
+    },
+    {
+      "uid": "cdx-run05#0",
+      "line": 302,
+      "severity": "major",
+      "category": "state-invariant",
+      "invariant": "A generation must always map to the ring slot containing that generation, including after the generation counter wraps.",
+      "trigger": "The device remains up for 2^32 samples, approximately 49.7 days at 1 kHz, and then captures another swing.",
+      "consequence": "After ring_total wraps, every generation-to-index mapping is displaced by 256 slots because 2^32 is not divisible by the 1280-sample ring size. Captures then omit the actual impact or copy unrelated samples, causing persistent coaching loss or corrupted results until reboot."
+    },
+    {
+      "uid": "cdx-run05#1",
+      "line": 184,
+      "severity": "major",
+      "category": "failure-recovery",
+      "invariant": "An armed capture must be discarded whenever the hardware FIFO is flushed and the sample stream becomes discontinuous.",
+      "trigger": "icm42688_read_fifo() fails during an armed capture. That production caller flushes the FIFO internally and sensor_thread merely breaks out of its drain loop without calling swing_capture_force_expire(); a later successful batch reaches swing_capture_tick().",
+      "consequence": "Samples lost by the flush are invisible to ring_total, so pre-gap and post-gap data are stitched together and accepted as a continuous swing. The device can persist and transmit corrupted coaching instead of dropping the damaged capture."
+    },
+    {
+      "uid": "cdx-run05#2",
+      "line": 171,
+      "severity": "major",
+      "category": "state-invariant",
+      "invariant": "Every sample in a captured span must have the sample rate and enabled axes recorded in swing_window.sample_rate_hz.",
+      "trigger": "The production power path changes the IMU from 1 kHz gyro+accel to 50 Hz accel-only during SLEEP, while sensor_thread continues feeding FIFO packets into this ring; a capture is then armed with rate_hz=1000 before enough full-rate samples have replaced the low-power history.",
+      "consequence": "The window mixes 50 Hz gyro-off data with 1 kHz data but is labeled entirely as 1 kHz. Segmentation can fail to find takeback motion, and any accepted timing, tempo, dwell, and integration-derived metrics are incorrect."
+    },
+    {
+      "uid": "cdx-run05#3",
+      "line": 283,
+      "severity": "major",
+      "category": "concurrency-lifetime",
+      "invariant": "The ml_thread reader must observe a coherent generation state and must not race with writes to ring slots it is copying.",
+      "trigger": "The higher-priority sensor_thread preempts ml_thread between the separate ring_total and ring_count loads, or advances far enough to overwrite gen_oldest while ml_thread is inside the copy loop.",
+      "consequence": "volatile does not provide an atomic snapshot or synchronize the plain ring accesses. The reader can compute an impossible oldest generation and drop a valid capture; if a referenced slot is overwritten during copying, the conflicting non-atomic accesses constitute a C data race, so the post-copy check cannot reliably guarantee that torn samples are rejected."
+    },
+    {
+      "uid": "cdx-run05#4",
+      "line": 174,
+      "severity": "minor",
+      "category": "state-invariant",
+      "invariant": "armed_impact_gen must identify the FIFO packet that actually crossed the impact threshold.",
+      "trigger": "An impact occurs before the final packet of a production FIFO burst. sensor_thread pushes the entire burst, then scans it for impact, and this function unconditionally chooses ring_total - 1.",
+      "consequence": "The nominal impact is shifted by up to 63 ms to the burst tail. Although the downstream segmenter rescans for contact, the fixed 1024-sample capture consequently loses up to 63 ms of oldest pre-impact history, causing sufficiently long or slow swings to lose their takeback start and be dropped or truncated."
+    },
+    {
+      "uid": "cdx-run06#0",
+      "line": 255,
+      "severity": "major",
+      "category": "failure-recovery",
+      "invariant": "After a FIFO discontinuity, no future descriptor may treat pre-gap and post-gap samples as one continuous 1 kHz stream.",
+      "trigger": "The sensor FIFO overflows and is flushed. sensor_thread calls swing_capture_force_expire(), then another impact occurs before at least SWING_MAX_SAMPLES of fresh samples have replaced the old ring contents.",
+      "consequence": "The next capture can combine samples from opposite sides of the data-loss gap. Segmentation may select the previous swing or compute dynamics across a fictitious continuous interval, persisting and notifying corrupted coaching data under the new impact ID."
+    },
+    {
+      "uid": "cdx-run06#1",
+      "line": 302,
+      "severity": "major",
+      "category": "state-invariant",
+      "invariant": "A generation must always map to the ring slot containing that generation's sample.",
+      "trigger": "Continuous sampling pushes 2^32 samples, approximately 49.7 active days at 1 kHz, causing the uint32_t ring_total generation to wrap.",
+      "consequence": "After the first wrap, every successful snapshot starts 256 ring slots away from the requested sample because 2^32 modulo 1280 equals 256. Coaching windows remain shifted or unrelated until reboot, causing persistent swing drops or corrupted stored and transmitted dynamics."
+    },
+    {
+      "uid": "cdx-run06#2",
+      "line": 308,
+      "severity": "major",
+      "category": "concurrency-lifetime",
+      "invariant": "The reader must either obtain an untorn ring span or reliably reject it when the producer overwrites that span during copying.",
+      "trigger": "The higher-priority sensor_thread preempts ml_thread during a snapshot and advances far enough to overwrite referenced slots while the copy is in progress.",
+      "consequence": "ring[] is concurrently read and written without synchronization, which is a C data race. Volatile generation counters neither synchronize ring accesses nor provide a compiler barrier around the copy, so the post-check cannot guarantee that optimized ring loads remain bracketed by it; a torn window can be accepted and persisted or transmitted."
+    },
+    {
+      "uid": "cdx-run06#3",
+      "line": 174,
+      "severity": "minor",
+      "category": "state-invariant",
+      "invariant": "armed_impact_gen must identify the FIFO packet that actually crossed the impact threshold.",
+      "trigger": "An impact occurs anywhere except the final packet of a production 64-packet FIFO batch. The caller pushes the entire batch, detects the impact by scanning it, and then calls swing_capture_on_impact().",
+      "consequence": "The impact generation is shifted later by up to 63 samples. For a full-size capture this discards up to 63 ms of available pre-impact motion, so long takebacks can lose their start or produce shortened timing metrics and be dropped by segmentation."
+    },
+    {
+      "uid": "cdx-run07#0",
+      "line": 302,
+      "severity": "major",
+      "category": "state-invariant",
+      "invariant": "A generation must map to the ring slot where that generation was written for the device's full supported uptime.",
+      "trigger": "After 2^32 samples, approximately 49.7 days at 1 kHz, ring_total wraps to zero. SWING_RING_SAMPLES is 1280, and 2^32 modulo 1280 is 256, so the physical ring head is 256 when the wrapped generation is zero.",
+      "consequence": "Every successful snapshot after the first generation wrap reads samples displaced by 256 positions. Coaching is then dropped or computed and persisted from the wrong motion data until reboot. The raw '<' and '>=' generation comparisons also reject valid captures or accept stale ones around the wrap."
+    },
+    {
+      "uid": "cdx-run07#1",
+      "line": 174,
+      "severity": "major",
+      "category": "state-invariant",
+      "invariant": "armed_impact_gen must identify the packet that crossed the impact threshold, not merely the last packet in its FIFO batch.",
+      "trigger": "sensor_thread pushes the entire FIFO batch into the ring before impact_process_icm_batch scans it, and only afterward calls swing_capture_on_impact. For a 64-packet batch whose threshold crossing occurs at index i, the real impact generation is ring_total - 64 + i, while this code records ring_total - 1.",
+      "consequence": "The capture is shifted by up to 63 ms: it loses the same amount of pre-impact takeback and retains excess post-impact data. Long takebacks can be truncated, causing valid swings to be dropped as -ENODATA or producing shortened and incorrect timing metrics."
+    },
+    {
+      "uid": "cdx-run07#2",
+      "line": 283,
+      "severity": "major",
+      "category": "concurrency-lifetime",
+      "invariant": "The reader's staleness decision and ring copy must be synchronized with the producer; a volatile qualifier does not make concurrent C accesses atomic or establish a happens-before relationship.",
+      "trigger": "The priority-2 sensor thread preempts the priority-5 ml thread while swing_capture_snapshot reads ring_total, ring_count, or ring elements and swing_capture_ring_push writes them. No lock, atomic operation, sequence counter, or other synchronization protects these conflicting accesses.",
+      "consequence": "The program has data races under the C memory model. Compiler reordering or inconsistent counter observations can defeat the intended post-copy guard, return a torn window as valid, or spuriously discard a valid swing."
+    },
+    {
+      "uid": "cdx-run07#3",
+      "line": 255,
+      "severity": "major",
+      "category": "failure-recovery",
+      "invariant": "After a FIFO gap, no later capture may treat samples from opposite sides of that gap as a contiguous 1 kHz stream.",
+      "trigger": "sensor_thread handles FIFO overflow by flushing the hardware FIFO and calling swing_capture_force_expire. This function only disarms an active post-impact capture; it leaves ring_head, ring_count, and ring_total unchanged. If overflow occurs during takeback while armed is false, it changes no capture state at all.",
+      "consequence": "The next impact can snapshot pre-overflow and post-overflow samples as adjacent samples. Segmentation and timing metrics then operate on a silently discontinuous window, producing corrupted coaching or accepting a swing that should have been dropped."
+    },
+    {
+      "uid": "cdx-run07#4",
+      "line": 237,
+      "severity": "major",
+      "category": "state-invariant",
+      "invariant": "A descriptor belonging to a stopped or replaced data-collection session must not survive into the next session.",
+      "trigger": "A STOP_SESSION or START_SESSION occurs during the 120-sample follow-through or while a descriptor waits in swing_q. The BLE control path clears the current session and purges imu_q, but neither expires the armed swing capture nor purges swing_q; swing_capture_tick unconditionally enqueues the previously latched session and impact IDs.",
+      "consequence": "ml_thread can persist and notify an old session's swing after a new session has started. If the client reuses the same session ID, the reset impact counter can produce an identical (session_id, impact_id), creating ambiguous or incorrectly joined records."
+    },
+    {
+      "uid": "cdx-run08#0",
+      "line": 311,
+      "severity": "major",
+      "category": "concurrency-lifetime",
+      "invariant": "A successful snapshot must contain one coherent generation span, and the staleness guard must remain ordered around every ring read.",
+      "trigger": "ml_thread is preempted during the copy and the higher-priority sensor_thread advances far enough to overwrite part of the referenced span before the copy finishes.",
+      "consequence": "The reader and writer access the same non-atomic ring elements concurrently, which is a C data race. Volatile generation counters neither synchronize those accesses nor prevent the compiler from moving ordinary ring reads across the checks, so the function can exhibit undefined behavior or accept a torn window, producing corrupted coaching and persisted swing data instead of failing closed."
+    },
+    {
+      "uid": "cdx-run08#1",
+      "line": 302,
+      "severity": "major",
+      "category": "state-invariant",
+      "invariant": "A generation must always map to the ring slot where that generation was written, including across ring_total rollover.",
+      "trigger": "The device streams continuously until the 32-bit ring_total wraps after about 49.7 days at 1 kHz.",
+      "consequence": "Because 2^32 is not divisible by the 1280-sample ring depth, ring_head is at slot 256 when ring_total wraps to zero. Subsequent snapshots map generations 256 slots away from their actual locations, generally omitting the real impact and dropping every coaching capture or processing unrelated samples until reboot; rollover also temporarily truncates pre-impact history because the wrapped generation is treated as the total number of prior samples."
+    },
+    {
+      "uid": "cdx-run08#2",
+      "line": 174,
+      "severity": "minor",
+      "category": "state-invariant",
+      "invariant": "armed_impact_gen must identify the FIFO sample that crossed the impact threshold, so the descriptor retains the full configured pre-impact and follow-through ranges around the real contact.",
+      "trigger": "The detected impact occurs anywhere except the final packet of a FIFO batch; production pushes the entire batch before scanning it, and batches can contain up to 64 packets.",
+      "consequence": "The window is shifted later by up to 63 samples: those samples are removed from the available pre-impact windup and replaced with unnecessary post-impact samples. Long but otherwise valid swings near the 903-sample pre-impact limit can lose their quiet/start boundary and be dropped by segmentation."
+    },
+    {
+      "uid": "cdx-run09#0",
+      "line": 56,
+      "severity": "major",
+      "category": "state-invariant",
+      "invariant": "A generation value must map to the same physical ring slot for the device's entire uptime.",
+      "trigger": "After ring_total wraps at 2^32 writes, approximately 49.7 cumulative days of 1 kHz sampling without reboot, a new descriptor uses the wrapped generation. Because 2^32 is not divisible by SWING_RING_SAMPLES (1280), gen_oldest % SWING_RING_SAMPLES is offset from ring_head by 256 slots.",
+      "consequence": "Snapshots read the wrong samples and generally omit the current impact, causing corrupted coaching records or persistent swing drops after the wrap."
+    },
+    {
+      "uid": "cdx-run09#1",
+      "line": 174,
+      "severity": "minor",
+      "category": "state-invariant",
+      "invariant": "armed_impact_gen must identify the packet that actually crossed the impact threshold.",
+      "trigger": "The sensor caller pushes an entire FIFO batch of up to 64 packets before scanning it for impact, then calls swing_capture_on_impact(); if the crossing is not the final packet, ring_total - 1 identifies a later sample by up to 63 ms.",
+      "consequence": "A full-length capture discards up to 63 ms of otherwise available pre-impact takeback data. Long swings near the supported window limit can lose their start and be rejected or produce shortened timing metrics."
+    },
+    {
+      "uid": "cdx-run09#2",
+      "line": 184,
+      "severity": "major",
+      "category": "failure-recovery",
+      "invariant": "Every sample counted toward an armed follow-through must belong to one uninterrupted 1 kHz stream following the impact.",
+      "trigger": "While capture is armed, icm42688_read_fifo() can fail and flush the hardware FIFO. The caller breaks out without swing_capture_force_expire(), so the next successful batch is passed to swing_capture_tick() as though no samples or time were lost.",
+      "consequence": "The descriptor joins samples from opposite sides of a FIFO data-loss gap while retaining a 1 kHz rate, corrupting segmentation and all time-dependent coaching metrics instead of dropping the affected swing."
+    },
+    {
+      "uid": "cdx-run09#3",
+      "line": 283,
+      "severity": "major",
+      "category": "concurrency-lifetime",
+      "invariant": "The snapshot must never return success after reading ring elements concurrently overwritten by the producer.",
+      "trigger": "ml_thread is copying a span when the higher-priority sensor thread advances far enough to overwrite that span. ring[] is accessed non-atomically without a lock or C memory-ordering primitive; volatile ring_total/ring_count neither makes the ring accesses race-free nor prevents ordinary ring loads from being reordered across the post-copy check.",
+      "consequence": "Under prolonged preemption or compiler optimization, the post-check can fail to bracket the actual loads and a torn window can be accepted, producing corrupted coaching data rather than -ESTALE."
+    },
+    {
+      "uid": "cdx-run10#0",
+      "line": 302,
+      "severity": "major",
+      "category": "state-invariant",
+      "invariant": "A generation must always map to the ring slot containing that generation, including after the 32-bit generation counter wraps.",
+      "trigger": "The device accumulates 2^32 samples without swing_capture_init() running again, about 49.7 days at 1 kHz. After the initial post-wrap staleness interval, snapshots are accepted again.",
+      "consequence": "Because 2^32 is not divisible by SWING_RING_SAMPLES (1280), wrapped generations map 256 slots away from their actual locations. Subsequent snapshots copy the wrong time span, causing swings to be dropped or coaching/raw-swing records to contain data from another portion of the stream until reboot."
+    },
+    {
+      "uid": "cdx-run10#1",
+      "line": 260,
+      "severity": "major",
+      "category": "failure-recovery",
+      "invariant": "Samples retained as capture history must form one contiguous, gap-free stream at sample_rate_hz.",
+      "trigger": "The sensor FIFO overflows and is flushed. sensor_thread calls swing_capture_force_expire(), then a new impact occurs before all pre-overflow samples have aged out of the 1280-sample ring.",
+      "consequence": "The next descriptor can combine pre-flush and post-flush samples while presenting them as contiguous 1 kHz data. Segmentation can select an earlier swing or compute incorrect timing and dynamics instead of failing closed."
+    },
+    {
+      "uid": "cdx-run10#2",
+      "line": 174,
+      "severity": "minor",
+      "category": "state-invariant",
+      "invariant": "armed_impact_gen and the resulting impact_off must identify the sample that actually crossed the impact threshold.",
+      "trigger": "An impact occurs anywhere except the last sample of a FIFO burst. The verified caller pushes the entire burst before impact_process_icm_batch() scans it, and bursts contain up to 64 samples.",
+      "consequence": "The capture anchor is delayed by 1–63 ms, so the fixed-capacity span loses the same amount of true pre-impact history and captures excess follow-through. The downstream segmenter can re-detect the impact, but long takebacks near the window boundary can be truncated or dropped."
+    }
+  ],
+  "result": {
+    "ok": true,
+    "n_runs": 3,
+    "mean_ari": 0.9781228303044137,
+    "ari_matrix": [
+      [
+        1.0,
+        0.9778081992806231,
+        0.968705567995371
+      ],
+      [
+        0.9778081992806231,
+        1.0,
+        0.9878547236372472
+      ],
+      [
+        0.968705567995371,
+        0.9878547236372472,
+        1.0
+      ]
+    ],
+    "gate_pass": true,
+    "medoid_index": 1,
+    "labeling": {
+      "ctrl-run02#4": "g0:Generation→ring-index mapping breaks per",
+      "e7-run03#2": "g0:Generation→ring-index mapping breaks per",
+      "cdx-run07#0": "g0:Generation→ring-index mapping breaks per",
+      "cdx-run03#1": "g0:Generation→ring-index mapping breaks per",
+      "cdx-run01#2": "g0:Generation→ring-index mapping breaks per",
+      "ctrl-run07#4": "g0:Generation→ring-index mapping breaks per",
+      "cdx-run05#0": "g0:Generation→ring-index mapping breaks per",
+      "ctrl-run06#1": "g0:Generation→ring-index mapping breaks per",
+      "ctrl-run08#0": "g0:Generation→ring-index mapping breaks per",
+      "e7-run07#2": "g0:Generation→ring-index mapping breaks per",
+      "cdx-run10#0": "g0:Generation→ring-index mapping breaks per",
+      "ctrl-run10#0": "g0:Generation→ring-index mapping breaks per",
+      "e7-run09#1": "g0:Generation→ring-index mapping breaks per",
+      "ctrl-run01#0": "g0:Generation→ring-index mapping breaks per",
+      "cdx-run04#0": "g0:Generation→ring-index mapping breaks per",
+      "cdx-run09#0": "g0:Generation→ring-index mapping breaks per",
+      "ctrl-run09#0": "g0:Generation→ring-index mapping breaks per",
+      "cdx-run08#1": "g0:Generation→ring-index mapping breaks per",
+      "ctrl-run03#0": "g0:Generation→ring-index mapping breaks per",
+      "e7-run02#1": "g0:Generation→ring-index mapping breaks per",
+      "ctrl-run05#0": "g0:Generation→ring-index mapping breaks per",
+      "cdx-run02#1": "g0:Generation→ring-index mapping breaks per",
+      "e7-run06#1": "g0:Generation→ring-index mapping breaks per",
+      "e7-run05#0": "g0:Generation→ring-index mapping breaks per",
+      "e7-run08#2": "g0:Generation→ring-index mapping breaks per",
+      "e7-run04#1": "g0:Generation→ring-index mapping breaks per",
+      "cdx-run06#1": "g0:Generation→ring-index mapping breaks per",
+      "ctrl-run07#5": "g1:Staleness/range guards use non-wrap-safe",
+      "ctrl-run04#5": "g1:Staleness/range guards use non-wrap-safe",
+      "ctrl-run05#1": "g1:Staleness/range guards use non-wrap-safe",
+      "cdx-run07#1": "g2:armed_impact_gen = ring_total - 1 mis-lo",
+      "cdx-run05#4": "g2:armed_impact_gen = ring_total - 1 mis-lo",
+      "cdx-run10#2": "g2:armed_impact_gen = ring_total - 1 mis-lo",
+      "cdx-run09#1": "g2:armed_impact_gen = ring_total - 1 mis-lo",
+      "cdx-run06#3": "g2:armed_impact_gen = ring_total - 1 mis-lo",
+      "ctrl-run01#2": "g2:armed_impact_gen = ring_total - 1 mis-lo",
+      "ctrl-run04#2": "g2:armed_impact_gen = ring_total - 1 mis-lo",
+      "cdx-run04#1": "g2:armed_impact_gen = ring_total - 1 mis-lo",
+      "cdx-run02#0": "g2:armed_impact_gen = ring_total - 1 mis-lo",
+      "e7-run04#2": "g2:armed_impact_gen = ring_total - 1 mis-lo",
+      "cdx-run01#1": "g2:armed_impact_gen = ring_total - 1 mis-lo",
+      "cdx-run03#3": "g2:armed_impact_gen = ring_total - 1 mis-lo",
+      "ctrl-run02#5": "g2:armed_impact_gen = ring_total - 1 mis-lo",
+      "cdx-run08#2": "g2:armed_impact_gen = ring_total - 1 mis-lo",
+      "ctrl-run10#6": "g3:armed_impact_gen underflows to 0xFFFFFFF",
+      "ctrl-run01#5": "g3:armed_impact_gen underflows to 0xFFFFFFF",
+      "ctrl-run06#5": "g3:armed_impact_gen underflows to 0xFFFFFFF",
+      "ctrl-run07#3": "g3:armed_impact_gen underflows to 0xFFFFFFF",
+      "ctrl-run08#2": "g3:armed_impact_gen underflows to 0xFFFFFFF",
+      "ctrl-run04#3": "g3:armed_impact_gen underflows to 0xFFFFFFF",
+      "ctrl-run03#3": "g3:armed_impact_gen underflows to 0xFFFFFFF",
+      "ctrl-run06#6": "g4:tick() credits pre-impact samples agains",
+      "ctrl-run04#0": "g4:tick() credits pre-impact samples agains",
+      "ctrl-run05#2": "g4:tick() credits pre-impact samples agains",
+      "ctrl-run10#2": "g4:tick() credits pre-impact samples agains",
+      "ctrl-run02#0": "g4:tick() credits pre-impact samples agains",
+      "ctrl-run08#1": "g5:Non-atomic paired read of (ring_total, r",
+      "e7-run08#3": "g5:Non-atomic paired read of (ring_total, r",
+      "ctrl-run10#4": "g5:Non-atomic paired read of (ring_total, r",
+      "ctrl-run03#2": "g5:Non-atomic paired read of (ring_total, r",
+      "e7-run02#2": "g5:Non-atomic paired read of (ring_total, r",
+      "ctrl-run06#4": "g5:Non-atomic paired read of (ring_total, r",
+      "cdx-run04#2": "g5:Non-atomic paired read of (ring_total, r",
+      "ctrl-run04#4": "g5:Non-atomic paired read of (ring_total, r",
+      "ctrl-run02#3": "g5:Non-atomic paired read of (ring_total, r",
+      "cdx-run08#0": "g6:No synchronization/compiler barrier arou",
+      "cdx-run05#3": "g6:No synchronization/compiler barrier arou",
+      "ctrl-run07#8": "g6:No synchronization/compiler barrier arou",
+      "cdx-run06#2": "g6:No synchronization/compiler barrier arou",
+      "cdx-run01#0": "g6:No synchronization/compiler barrier arou",
+      "cdx-run09#3": "g6:No synchronization/compiler barrier arou",
+      "cdx-run07#2": "g6:No synchronization/compiler barrier arou",
+      "ctrl-run06#2": "g7:SWING_STALENESS_MARGIN is never applied ",
+      "ctrl-run07#6": "g7:SWING_STALENESS_MARGIN is never applied ",
+      "ctrl-run04#6": "g7:SWING_STALENESS_MARGIN is never applied ",
+      "ctrl-run09#3": "g7:SWING_STALENESS_MARGIN is never applied ",
+      "ctrl-run08#4": "g7:SWING_STALENESS_MARGIN is never applied ",
+      "ctrl-run10#5": "g7:SWING_STALENESS_MARGIN is never applied ",
+      "ctrl-run01#4": "g7:SWING_STALENESS_MARGIN is never applied ",
+      "e7-run04#0": "g8:FIFO overflow/flush leaves the ring hist",
+      "e7-run06#0": "g8:FIFO overflow/flush leaves the ring hist",
+      "e7-run10#1": "g8:FIFO overflow/flush leaves the ring hist",
+      "e7-run03#0": "g8:FIFO overflow/flush leaves the ring hist",
+      "e7-run08#1": "g8:FIFO overflow/flush leaves the ring hist",
+      "cdx-run07#3": "g8:FIFO overflow/flush leaves the ring hist",
+      "e7-run09#0": "g8:FIFO overflow/flush leaves the ring hist",
+      "e7-run01#0": "g8:FIFO overflow/flush leaves the ring hist",
+      "cdx-run02#2": "g8:FIFO overflow/flush leaves the ring hist",
+      "cdx-run06#0": "g8:FIFO overflow/flush leaves the ring hist",
+      "e7-run05#2": "g8:FIFO overflow/flush leaves the ring hist",
+      "e7-run07#0": "g8:FIFO overflow/flush leaves the ring hist",
+      "e7-run02#0": "g8:FIFO overflow/flush leaves the ring hist",
+      "cdx-run03#2": "g8:FIFO overflow/flush leaves the ring hist",
+      "cdx-run10#1": "g8:FIFO overflow/flush leaves the ring hist",
+      "cdx-run05#1": "g9:SPI/read_fifo error path flushes the FIF",
+      "cdx-run09#2": "g9:SPI/read_fifo error path flushes the FIF",
+      "e7-run01#1": "g10:Low-power 50 Hz gyro-off samples enter t",
+      "cdx-run05#2": "g10:Low-power 50 Hz gyro-off samples enter t",
+      "e7-run10#0": "g10:Low-power 50 Hz gyro-off samples enter t",
+      "ctrl-run04#1": "g11:swing_capture_init() resets the generati",
+      "ctrl-run06#0": "g11:swing_capture_init() resets the generati",
+      "ctrl-run01#1": "g11:swing_capture_init() resets the generati",
+      "ctrl-run07#1": "g11:swing_capture_init() resets the generati",
+      "ctrl-run02#1": "g11:swing_capture_init() resets the generati",
+      "ctrl-run03#1": "g11:swing_capture_init() resets the generati",
+      "ctrl-run10#1": "g11:swing_capture_init() resets the generati",
+      "ctrl-run09#2": "g11:swing_capture_init() resets the generati",
+      "e7-run05#1": "g12:Ring wrap margin is smaller than ml_thre",
+      "ctrl-run07#0": "g12:Ring wrap margin is smaller than ml_thre",
+      "e7-run03#3": "g12:Ring wrap margin is smaller than ml_thre",
+      "e7-run10#3": "g12:Ring wrap margin is smaller than ml_thre",
+      "e7-run07#1": "g13:Pre-impact span longer than the impact d",
+      "e7-run03#1": "g13:Pre-impact span longer than the impact d",
+      "e7-run08#0": "g13:Pre-impact span longer than the impact d",
+      "e7-run10#2": "g13:Pre-impact span longer than the impact d",
+      "cdx-run03#0": "g13:Pre-impact span longer than the impact d",
+      "ctrl-run07#2": "g14:Armed state has no internal time/generat",
+      "ctrl-run02#2": "g14:Armed state has no internal time/generat",
+      "ctrl-run10#3": "g15:swing_capture_force_expire()/is_armed() ",
+      "ctrl-run05#3": "g15:swing_capture_force_expire()/is_armed() ",
+      "ctrl-run06#3": "g15:swing_capture_force_expire()/is_armed() ",
+      "ctrl-run03#4": "g15:swing_capture_force_expire()/is_armed() ",
+      "ctrl-run01#3": "g15:swing_capture_force_expire()/is_armed() ",
+      "ctrl-run09#1": "g15:swing_capture_force_expire()/is_armed() ",
+      "ctrl-run08#3": "g15:swing_capture_force_expire()/is_armed() ",
+      "ctrl-run05#4": "g16:-EINVAL and silent-disarm drop paths inc",
+      "cdx-run07#4": "g17:Session stop/start does not expire the a",
+      "ctrl-run07#7": "g18:pre_avail clamp uses rc - 1, which count"
+    },
+    "n_groups": 19
+  }
+}

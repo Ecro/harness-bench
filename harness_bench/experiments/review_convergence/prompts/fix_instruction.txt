@@ -1,0 +1,37 @@
+---
+
+The specification above is the contract. The Python module above implements it. A reviewer
+reported the findings listed below against exactly that module.
+
+Decide what to do about each finding, then produce the resulting module.
+
+Constraints:
+
+- The public contract is FIXED. The constructor signature, the method and property names, and
+  the documented behaviour must stay exactly as the specification states. A finding that asks
+  you to change any of those is out of scope -- reject it and say so.
+- Standard library only. Single file.
+- Do not rewrite code the findings did not ask about. Do not reformat. Do not rename anything
+  you were not asked to.
+- If a finding is wrong, or would make the module violate the specification, REJECT it and
+  leave that code alone. Rejecting is a normal outcome, not a failure.
+
+Output STRICTLY this JSON and nothing else -- no prose before it, no code fence around it:
+
+{
+  "decisions": [
+    {
+      "index": <0-based index of the finding>,
+      "action": "accepted" | "rejected",
+      "reason": "<one sentence: why you changed it, or why you did not>"
+    }
+  ],
+  "code": "<the COMPLETE resulting contents of retry_policy.py, from first line to last>"
+}
+
+Every finding must appear exactly once in "decisions".
+
+"code" must be the whole file, importable and runnable as-is. It is written straight to disk
+and imported -- a truncated or elided body ("... rest unchanged ...") destroys the run.
+
+--- FINDINGS ---

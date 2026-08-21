@@ -1,0 +1,52 @@
+---
+
+The specification above is the contract. The Python module above implements it.
+
+You are reviewing this module before release.
+
+Review it across these areas, in this order of importance:
+
+1. DESIGN -- is the internal design right?
+   The public contract above is FIXED and is not up for review: the constructor signature,
+   the method names, and the documented behaviour must stay exactly as specified. Review the
+   design BEHIND that contract -- the internal decomposition, the abstractions chosen, where
+   responsibilities sit, whether the structure fits the problem, whether a fundamentally
+   simpler internal design exists.
+
+2. FUNCTIONALITY -- does it do what the contract says?
+   Edge cases, boundary conditions, error paths, state transitions, arithmetic, re-entrancy.
+
+3. COMPLEXITY -- is it more complex than it needs to be?
+   Over-engineering, speculative generality, logic a reader cannot hold in their head,
+   control flow that could be flattened.
+
+4. ROBUSTNESS -- how does it behave when things go wrong?
+   Unbounded resource use, exceptions escaping the public surface, state that can wedge
+   permanently, silent failure.
+
+5. NAMING AND COMMENTS -- will the next person understand this?
+   Names that mislead, missing rationale for non-obvious decisions, comments that restate
+   the code instead of explaining why.
+
+6. CONSISTENCY AND STYLE -- is it idiomatic Python, consistent within the module?
+
+Report a finding only if you can point at a specific line. Do not report a problem you
+cannot locate in the code.
+
+List findings in order of importance, most important first.
+
+Output STRICTLY this JSON and nothing else -- no prose before it, no code fence around it:
+
+{
+  "findings": [
+    {
+      "line": <1-indexed line number in the module>,
+      "severity": "critical" | "major" | "minor",
+      "title": "<short phrase>",
+      "problem": "<what is wrong>",
+      "suggestion": "<what to do instead>"
+    }
+  ]
+}
+
+At most 15 findings. If you find nothing worth reporting, return {"findings": []}.

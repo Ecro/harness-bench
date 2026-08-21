@@ -1,0 +1,33 @@
+---
+
+The specification above is the contract. The Python module above implements it.
+
+You are reviewing this module before release.
+
+You are reviewing ONE area only:
+
+DESIGN -- is the internal design right?
+   The public contract above is FIXED and is not up for review: the constructor signature,
+   the method names, and the documented behaviour must stay exactly as specified. Review the
+   design BEHIND that contract -- the internal decomposition, the abstractions chosen, where
+   responsibilities sit, whether the structure fits the problem, whether a fundamentally
+   simpler internal design exists.
+
+Report a finding only if you can point at a specific line. Do not report a problem you
+cannot locate in the code.
+
+Output STRICTLY this JSON and nothing else -- no prose before it, no code fence around it:
+
+{
+  "findings": [
+    {
+      "line": <1-indexed line number in the module>,
+      "severity": "critical" | "major" | "minor",
+      "title": "<short phrase>",
+      "problem": "<what is wrong>",
+      "suggestion": "<what to do instead>"
+    }
+  ]
+}
+
+At most 15 findings. If you find nothing worth reporting, return {"findings": []}.

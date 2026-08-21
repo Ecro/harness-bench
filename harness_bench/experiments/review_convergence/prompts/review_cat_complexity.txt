@@ -1,0 +1,30 @@
+---
+
+The specification above is the contract. The Python module above implements it.
+
+You are reviewing this module before release.
+
+You are reviewing ONE area only:
+
+COMPLEXITY -- is it more complex than it needs to be?
+   Over-engineering, speculative generality, logic a reader cannot hold in their head,
+   control flow that could be flattened.
+
+Report a finding only if you can point at a specific line. Do not report a problem you
+cannot locate in the code.
+
+Output STRICTLY this JSON and nothing else -- no prose before it, no code fence around it:
+
+{
+  "findings": [
+    {
+      "line": <1-indexed line number in the module>,
+      "severity": "critical" | "major" | "minor",
+      "title": "<short phrase>",
+      "problem": "<what is wrong>",
+      "suggestion": "<what to do instead>"
+    }
+  ]
+}
+
+At most 15 findings. If you find nothing worth reporting, return {"findings": []}.
