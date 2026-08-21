@@ -92,3 +92,16 @@ def test_cluster_gate_blocks_quotation():
     from harness_bench.core.cluster.cluster import ClusterResult, UNQUOTABLE
     assert ClusterResult(True, None, 0.781, False, 12, {}).quotable() == UNQUOTABLE
     assert ClusterResult(True, None, 0.978, True, 19, {}).quotable() == 19
+
+
+def test_canary_declares_its_own_tools():
+    """프로브는 프로브할 도구가 있어야 한다.
+
+    기본 차단(allow_tools=set())으로 카나리를 돌리면 모델은 아무것도 시도하지 못하고
+    전부 실패를 반환하며, 그것은 격리의 증거가 아니라 정확히 이 클래스가 존재하는
+    이유인 '고장난 프로브' 다. 실제로 한 번 그랬다.
+    """
+    from harness_bench.core.sandbox.canary import Canary, Leg
+    c = Canary("p", [Leg("a", "POS", lambda d: True), Leg("b", "NEG", lambda d: True)])
+    assert c.needs_tools, "카나리가 도구를 선언하지 않는다"
+    assert {"Read", "Write"} <= c.needs_tools

@@ -10,16 +10,26 @@ from __future__ import annotations
 
 from ...core.ledger.profile import Rule
 
-# 측정할 특성 — bench run 이 채운다.
+# 측정할 특성. `tier` 는 **어느 티어가 이것을 잴 수 있는가** 이다.
+#
+# tier-1(계약이 오라클)은 두 개를 원리적으로 못 잰다:
+#   finds_per_call   "진짜 결함" 을 세려면 판정된 결함 집합이 필요한데, tier-1 의 v0 는
+#                    검증된 정답(19/19)이라 판정할 결함이 없다.
+#   verbosity_shift  리포 접근 유무의 대비인데, tier-1 은 단일 파일 과제라 리포가 없다.
+#
+# 못 재는 것을 0 이나 추정으로 채우지 않는다. None 으로 두면 그 특성에 걸린 규칙은
+# 발화하지 않고(Profile.prescribe 가 KeyError 를 삼킨다), 프로파일에 무엇이 비었는지 남는다.
 TRAIT_KEYS = {
-    "spread":            "같은 코드를 N회 리뷰했을 때 지적 수의 범위 (max-min)",
-    "loop_decay":        "루프 라운드가 갈수록 지적이 주는가 (선형 기울기)",
-    "churn_dries":       "누적 churn 이 라운드 진행에 따라 0 으로 수렴하는가",
-    "finds_per_call":    "리포 접근 조건에서 콜당 잡은 '진짜' 결함 수",
-    "verbosity_shift":   "리포를 열었을 때 원시 지적 수 변화율 (음수=말을 아낌)",
-    "rejection_rate":    "수정자로 썼을 때 지적을 거절하는 비율",
-    "malformed_rate":    "JSON 강제에도 파싱 불가한 응답 비율",
-    "tools_blockable":   "이 어댑터로 도구를 끌 수 있는가",
+    "spread":            ("tier-1", "같은 코드를 N회 리뷰했을 때 지적 수의 범위 (max-min)"),
+    "loop_decay":        ("tier-1", "루프 라운드가 갈수록 지적이 주는가 (선형 기울기)"),
+    "churn_dries":       ("tier-1", "라운드별 churn 이 0 으로 수렴하는가"),
+    "rejection_rate":    ("tier-1", "수정자로 썼을 때 지적을 거절하는 비율"),
+    "malformed_rate":    ("tier-1", "JSON 강제에도 파싱 불가한 응답 비율"),
+    "ac_held":           ("tier-1", "루프 전 라운드에서 계약 준수가 유지됐는가"),
+    "loc_direction":     ("tier-1", "루프가 코드를 늘리는가 줄이는가 (최종/시작)"),
+    "tools_blockable":   ("adapter", "이 어댑터로 도구를 끌 수 있는가"),
+    "finds_per_call":    ("tier-2", "리포 접근 조건에서 콜당 잡은 '진짜' 결함 수"),
+    "verbosity_shift":   ("tier-2", "리포를 열었을 때 원시 지적 수 변화율 (음수=말을 아낌)"),
 }
 
 RULES: list[Rule] = [

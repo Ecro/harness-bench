@@ -25,7 +25,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from ..runner.call import call
+from ..runner.call import call, save
 from ..runner.result import CallResult
 
 
@@ -46,6 +46,10 @@ class Leg:
 class Canary:
     prompt: str
     legs: list[Leg]
+    # 프로브는 프로브할 도구가 있어야 한다. 기본 차단(allow_tools=set())을 그대로 쓰면
+    # 모델은 아무것도 시도하지 못하고 전부 "실패" 를 반환하며, 그것은 격리의 증거가
+    # 아니라 정확히 이 클래스가 존재하는 이유인 '고장난 프로브' 다.
+    needs_tools: set[str] = field(default_factory=lambda: {"Read", "Write", "Bash"})
     result: CallResult | None = field(default=None, init=False)
     verdicts: dict[str, bool] = field(default_factory=dict, init=False)
 
@@ -58,7 +62,10 @@ class Canary:
             raise ValueError("a canary with no NEG leg asserts nothing about isolation")
 
     def run(self, adapter, scratch: Path, **kw) -> "Canary":
+        kw.setdefault("allow_tools", self.needs_tools)
         self.result = call(adapter, "canary", self.prompt, scratch, **kw)
+        # 원본을 항상 남긴다. 실패한 카나리야말로 보존해야 할 증거다.
+        save(self.result, scratch, "canary")
         parsed = self.result.parsed or {}
         self.verdicts = {l.name: bool(l.check(parsed)) for l in self.legs}
         return self
