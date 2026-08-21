@@ -24,6 +24,7 @@ When a new model ships, one run puts it in the same table as the others — and 
 |---|---|
 | **[Findings →](docs/FINDINGS.md)** | every measurement, with the numbers |
 | **[So how should you review? →](docs/PRESCRIPTION.md)** | the recipe the measurements support |
+| **[How it was measured →](docs/METHODS.md)** | every instrument, and how each was validated |
 | [Benchmark design and its own results →](docs/REVIEW-BENCH.md) | the reproducible tier-1 runs |
 | [Long-form write-up (Korean) →](docs/STUDY-ko.md) | the narrative version |
 
@@ -39,6 +40,13 @@ repository access           those false positives drop to 0%, in BOTH vendors' m
 ```
 
 > **Review many times. Fix once.**
+
+Every instrument is validated before use — the isolation by a two-way canary, the acceptance
+suite by deleting a guarantee and checking it notices, the clustering by a stability gate and
+a second vendor's model, the differential harness by planted divergences, the free-space
+denominator by mutation testing. Where an instrument cannot support a number, it returns
+`UNQUOTABLE` or `None` rather than a number with a footnote. See
+[`docs/METHODS.md`](docs/METHODS.md).
 
 ---
 
@@ -119,6 +127,7 @@ Full design and results: [`docs/REVIEW-BENCH.md`](docs/REVIEW-BENCH.md)
 
 | | |
 |---|---|
+| [`docs/METHODS.md`](docs/METHODS.md) | how each number was obtained and each instrument validated |
 | [`docs/FINDINGS.md`](docs/FINDINGS.md) | every measurement from the study, with the numbers |
 | [`docs/PRESCRIPTION.md`](docs/PRESCRIPTION.md) | the review recipe the measurements support |
 | [`docs/STUDY-ko.md`](docs/STUDY-ko.md) | long-form narrative write-up (Korean) |

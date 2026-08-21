@@ -24,6 +24,7 @@
 |---|---|
 | **[발견 →](docs/FINDINGS.ko.md)** | 측정된 전부, 숫자와 함께 |
 | **[그래서 리뷰를 어떻게 →](docs/PRESCRIPTION.ko.md)** | 측정이 뒷받침하는 레시피 |
+| **[어떻게 측정했는가 →](docs/METHODS.ko.md)** | 계측기 전부와 각각의 검증 |
 | **[장문 서사 →](docs/STUDY-ko.md)** | 초고 전문 (1700줄) |
 | [벤치 설계와 자체 결과 →](docs/REVIEW-BENCH.ko.md) | 재현 가능한 tier-1 실행 |
 
@@ -39,6 +40,12 @@
 ```
 
 > **리뷰는 여러 번, 수정은 한 번.**
+
+모든 계측기는 쓰이기 전에 검증됩니다 — 격리는 양방향 카나리로, 인수 스위트는 보증을 하나
+지우고 알아채는지 확인해서, 클러스터링은 안정성 게이트와 다른 벤더 모델로, 차등 하네스는
+심어둔 발산으로, 자유 공간 분모는 뮤테이션 테스트로. 계측기가 숫자를 뒷받침할 수 없으면
+각주 달린 숫자가 아니라 `UNQUOTABLE` 또는 `None` 을 반환합니다.
+[`docs/METHODS.ko.md`](docs/METHODS.ko.md)
 
 ---
 
@@ -119,6 +126,7 @@ ARI 게이트      문턱 미달이면 숫자가 아니라 문자열 UNQUOTABLE 
 
 | | |
 |---|---|
+| [`docs/METHODS.ko.md`](docs/METHODS.ko.md) | 각 숫자를 어떻게 얻었고 계측기를 어떻게 검증했는가 |
 | [`docs/FINDINGS.ko.md`](docs/FINDINGS.ko.md) | 연구에서 측정된 전부, 숫자와 함께 |
 | [`docs/PRESCRIPTION.ko.md`](docs/PRESCRIPTION.ko.md) | 측정이 뒷받침하는 리뷰 레시피 |
 | [`docs/STUDY-ko.md`](docs/STUDY-ko.md) | 장문 서사 초고 |
