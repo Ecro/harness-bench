@@ -16,14 +16,19 @@ model. What follows are the constraints that belong beside every number this ben
 In this line of work, **only three statements have been reproduced more than once.**
 
 ```text
-***  repeated review and the fix loop are different activities
-***  in a single-file scope, the most confidently reported finding is the most suspect
-***  contract compliance discriminates nothing — every condition holds it
+[reproduced]  repeated review and the fix loop are different activities
+[reproduced]  in a single-file scope, the most confidently reported finding is the most suspect
+[reproduced]  contract compliance discriminates nothing — every condition holds it
 ```
 
-Everything else was observed once. That is why every prescription line carries a grade, and why
-an ungraded rule will not render at all. `***` means reproduced across two or more models or
-conditions, `**` measured once, and `*` closer to judgement than to data.
+Everything else was observed once. That is why every prescription line carries a strength of
+evidence, and why a rule without one will not render at all.
+
+```text
+[reproduced]     the same result appeared in different models or conditions  (machine output: ***)
+[measured once]  measured once, in one condition                             (**)
+[judgement]      not directly supported by data                              (*)
+```
 
 ## 2. Model comparison is tier-1 only
 
