@@ -1,5 +1,7 @@
 # Design
 
+[한국어](DESIGN.ko.md)
+
 `harness-bench` measures **harness design**, not model capability. It answers a practical
 question: *given this model, how should the loop around it be configured?*
 

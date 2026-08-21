@@ -1,5 +1,7 @@
 # Limits — what this benchmark does not support
 
+[한국어](LIMITS.ko.md)
+
 **This is not a model leaderboard.** It measures the effect of *harness design*: not
 "which model is smarter" but "how should this model be operated". Cited as a ranking, it is
 misread.

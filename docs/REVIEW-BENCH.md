@@ -1,5 +1,7 @@
 # review-convergence — design and results
 
+[한국어](REVIEW-BENCH.ko.md)
+
 The question: **does repeated AI code review converge, and what does the loop around it cost?**
 
 ---

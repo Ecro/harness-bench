@@ -1,5 +1,7 @@
 # Findings
 
+[한국어](FINDINGS.ko.md) · long-form (Korean): [`STUDY-ko-rewrite.md`](STUDY-ko-rewrite.md)
+
 Everything measured in the study this benchmark derives from, and in the benchmark itself.
 Numbers are stated with the tier that produced them.
 

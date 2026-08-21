@@ -58,7 +58,7 @@ repository access           those false positives drop to 0%, in BOTH vendors' m
 | **[So how should you review? →](docs/PRESCRIPTION.md)** | the recipe the measurements support |
 | **[How it was measured →](docs/METHODS.md)** | every instrument, and how each was validated |
 | [Experiment 1 in full →](docs/REVIEW-BENCH.md) | design, tasks, and the reproducible tier-1 runs |
-| [Long-form write-up (Korean) →](docs/STUDY-ko.md) | the narrative version |
+| [Long-form write-up (Korean) →](docs/STUDY-ko-rewrite.md) | the whole study as one narrative |
 
 Task `retry_policy`, two models, three loops each — measured 2026-08-21:
 
@@ -173,7 +173,7 @@ Experiment 1 — `review_convergence`:
 | [`docs/REVIEW-BENCH.md`](docs/REVIEW-BENCH.md) | the experiment in full: design, tasks, results |
 | [`docs/FINDINGS.md`](docs/FINDINGS.md) | every measurement, with the numbers |
 | [`docs/PRESCRIPTION.md`](docs/PRESCRIPTION.md) | the review recipe the measurements support |
-| [`docs/STUDY-ko.md`](docs/STUDY-ko.md) | long-form narrative write-up (Korean) |
+| [`docs/STUDY-ko-rewrite.md`](docs/STUDY-ko-rewrite.md) | long-form narrative write-up, experiments and corrections (Korean) |
 
 ## License
 

@@ -1,5 +1,7 @@
 # Methods — how each number was obtained, and how the instrument was checked
 
+[한국어](METHODS.ko.md)
+
 Every instrument here is validated before it is used. A measurement device that has not been
 shown to respond to the thing it claims to measure — and to stay silent otherwise — produces
 numbers, not evidence.

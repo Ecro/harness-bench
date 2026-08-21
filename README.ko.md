@@ -56,7 +56,7 @@ harness-bench 는 **실험 모음**이다. `core` 가 측정 기계 — 샌드�
 | **[그래서 리뷰를 어떻게 →](docs/PRESCRIPTION.ko.md)** | 측정이 뒷받침하는 레시피 |
 | **[어떻게 측정했는가 →](docs/METHODS.ko.md)** | 계측기 전부와 각각의 검증 |
 | [실험 1 전문 →](docs/REVIEW-BENCH.ko.md) | 설계·과제·재현 가능한 tier-1 실행 |
-| [장문 서사 →](docs/STUDY-ko.md) | 초고 전문 |
+| [장문 서사 →](docs/STUDY-ko-rewrite.md) | 연구 전체를 한 흐름으로 |
 
 과제 `retry_policy`, 두 모델, 각 3루프 — 2026-08-21 측정:
 
@@ -171,7 +171,7 @@ traits.TRAIT_KEYS / traits.RULES            무엇을 재고, 그것이 무엇�
 | [`docs/REVIEW-BENCH.ko.md`](docs/REVIEW-BENCH.ko.md) | 실험 전문: 설계·과제·결과 |
 | [`docs/FINDINGS.ko.md`](docs/FINDINGS.ko.md) | 측정된 전부, 숫자와 함께 |
 | [`docs/PRESCRIPTION.ko.md`](docs/PRESCRIPTION.ko.md) | 측정이 뒷받침하는 리뷰 레시피 |
-| [`docs/STUDY-ko.md`](docs/STUDY-ko.md) | 장문 서사 초고 |
+| [`docs/STUDY-ko-rewrite.md`](docs/STUDY-ko-rewrite.md) | 장문 서사 — 실험과 정정의 전체 기록 |
 
 ## 라이선스
 
