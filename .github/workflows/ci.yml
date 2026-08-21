@@ -1,0 +1,47 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: pip install -e ".[dev]"
+      # 경계 + 재현 게이트. 둘 다 LLM 을 부르지 않으므로 CI 에서 완전히 돈다 —
+      # 재현 게이트가 모델을 부른다면 그건 재현이 아니라 새 실험이다.
+      - run: pytest -q
+
+  oracle:
+    # 오라클이 무엇을 보증하는지 검증한다. 원 연구의 1부는 오라클을 도입하고 이것을
+    # 묻지 않았다가 무너졌다 — "빨개짐" 을 "버그 발생" 으로 자동 번역했고, 그 유명한
+    # 4/4 회귀는 도달 불가 상태를 고정한 테스트였다.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: pip install -e ".[dev]"
+      - name: verify task oracles
+        run: |
+          python - <<'PY'
+          import sys
+          from harness_bench.experiments.review_convergence.tasks import TASKS
+          from harness_bench.experiments.review_convergence import oracle
+          ok = all(oracle.verify(t) for t in TASKS.values())
+          sys.exit(0 if ok else 1)
+          PY
+
+  secrets:
+    # runner 는 실행 시 실제 자격증명을 스크래치 HOME 으로 복사한다. 한 번이라도
+    # 커밋되면 되돌릴 수 없다. .gitignore + pre-commit 훅에 이어 세 번째 방어선이고,
+    # 셋이 같은 스크립트를 쓴다 — 패턴이 갈라지지 않도록.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - run: ./tools/secret_scan.sh history

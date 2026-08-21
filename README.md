@@ -53,10 +53,30 @@ harness_bench/
 ```
 [x] Phase 1   코어 6모듈 + 경계 테스트
 [x] Phase 1b  첫 실험 이식 + 재현 게이트 (원 연구 수치가 소수점까지 일치, LLM 콜 0)
-[ ] Phase 2   bench CLI
-[ ] Phase 3   문서 보강
-[ ] Phase 4   공개
+[x] Phase 2   bench CLI + 첫 원장 (claude · codex)
+[x] Phase 3   방법론 · 한계 · 과제 문서
+[x] Phase 4   CI 3잡(테스트 · 오라클 검증 · 시크릿 스캔) + 공개
 ```
+
+## 지금까지 나온 것
+
+```bash
+bench canary --model claude          격리 양방향 확인. 실패하면 이후 명령 거부
+bench run    --model claude --loops 3
+bench compare                        원장 갱신
+bench prescribe --model claude       운용 처방 (근거 등급 병기)
+```
+
+첫 원장에서 이미 두 가지가 일어났다.
+
+**하나 — 카나리가 두 번 연속 실제 오진단을 막았다.** claude 는 기본 도구 차단이
+프로브 자신의 도구까지 막았고, codex 는 `-s read-only` 라 쓰기를 못 했다. 둘 다
+NEG 만 봤다면 "격리 성공" 으로 기록됐을 것이다.
+
+**둘 — 내가 원 연구와 같은 실수를 반대 방향으로 저질렀다.** 루프 하나에서 나온
+churn 방향을 반증이라 불렀고, 3루프로 재보니 원 연구가 맞았다. 세 비율이 문턱
+언저리(0.611~0.732)에 몰려 있어 루프 하나로는 어느 쪽이든 나온다.
+→ [`docs/KNOWN-DISCREPANCIES.md`](docs/KNOWN-DISCREPANCIES.md)
 
 ```bash
 pip install -e ".[dev]"
