@@ -16,12 +16,29 @@ When a new model ships, one run puts it in the same table as the others — and 
 > This is **not a model leaderboard.** It measures harness design, not model capability.
 > See [`docs/LIMITS.md`](docs/LIMITS.md).
 
-> ### 📊 **[review-convergence — full design, method and results →](docs/REVIEW-BENCH.md)**
->
-> *Does repeated AI code review converge?* Two models, three loops each, contract-as-oracle.
-> Reviewers report **3–14 findings per pass on code that already passes all 23 acceptance
-> tests**, contract compliance holds in **every one of 54 loop rounds**, and the direction in
-> which the loop changes code size turns out to be a **model property** (1.258× vs 0.906×).
+## 📊 Does repeated AI code review converge?
+
+**11 experiments · ~400 model calls · two vendors.** Start here:
+
+| | |
+|---|---|
+| **[Findings →](docs/FINDINGS.md)** | every measurement, with the numbers |
+| **[So how should you review? →](docs/PRESCRIPTION.md)** | the recipe the measurements support |
+| [Benchmark design and its own results →](docs/REVIEW-BENCH.md) | the reproducible tier-1 runs |
+| [Long-form write-up (Korean) →](docs/STUDY-ko.md) | the narrative version |
+
+Four of the results, to give the shape of it:
+
+```
+review only, repeated       real-defect coverage 34% -> 61% -> 76%, code risk zero
+review->fix loop, repeated  compliance gain ZERO, code +24% to +152%
+
+file-only review            29% of distinct defects were FALSE -- and the false ones were
+                            the MOST frequently reported (6.8 detections vs 3.4)
+repository access           those false positives drop to 0%, in BOTH vendors' models
+```
+
+> **Review many times. Fix once.**
 
 ---
 
@@ -102,6 +119,9 @@ Full design and results: [`docs/REVIEW-BENCH.md`](docs/REVIEW-BENCH.md)
 
 | | |
 |---|---|
+| [`docs/FINDINGS.md`](docs/FINDINGS.md) | every measurement from the study, with the numbers |
+| [`docs/PRESCRIPTION.md`](docs/PRESCRIPTION.md) | the review recipe the measurements support |
+| [`docs/STUDY-ko.md`](docs/STUDY-ko.md) | long-form narrative write-up (Korean) |
 | [`docs/DESIGN.md`](docs/DESIGN.md) | harness-bench architecture and the six disciplines |
 | [`docs/REVIEW-BENCH.md`](docs/REVIEW-BENCH.md) | the review experiment: design, tasks, results |
 | [`docs/LIMITS.md`](docs/LIMITS.md) | what this benchmark does not support |
