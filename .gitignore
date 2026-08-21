@@ -18,5 +18,10 @@ venv/
 .pytest_cache/
 .DS_Store
 
+# 빌드 산출물 — pip install -e 가 만든다
+*.egg-info/
+build/
+dist/
+
 # 실행 산출물 — 원장(ledger)과 요약만 커밋한다
 results/**/raw/
