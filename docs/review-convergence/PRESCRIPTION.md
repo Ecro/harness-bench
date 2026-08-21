@@ -86,7 +86,7 @@ side. A harness that alternates them maximises risk per unit of gain.
 
 10 run two models once each rather than one model twice             ***
      both dropped the same four false positives, but found different true ones
-     (4/10 each, union 5/10). Three mixed calls beat six same-model calls.
+     (4/10 each, union 5/10). Three mixed calls beat six calls of a single model (repo A).
 ```
 
 ---
@@ -140,6 +140,12 @@ moment the two diverge is the moment the loop started making the code worse.
 where your contract is silent, and that costs nothing to collect.
 
 ### A one-minute version of the canary
+
+> **Canary** — a probe that checks the *instrument is actually attached* before anything is
+> measured. This bench's canary runs in both directions: something that should be reachable
+> (POS) and something that must not be (NEG). A failed POS leg is not isolation working, it is
+> a **broken probe**, and numbers collected in that state are void. See
+> [`METHODS.md`](METHODS.md).
 
 No research apparatus needed:
 

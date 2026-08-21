@@ -1171,6 +1171,11 @@ was in fact an environment configuration problem.
 
 ### A canary for practice
 
+> **Canary** — a probe that checks the *instrument is actually attached* before you measure
+> anything, the way the bird in the mine did. The point is that it must run in both directions:
+> something that should be reachable (POS) and something that must not be (NEG). Read a failed
+> POS leg as "isolation worked" and you record a run that measured nothing as a success.
+
 Once a month or so, ask the reviewer to do this:
 
 > "Quote line N of the *caller's* file verbatim — not the file you were just shown."
