@@ -2,262 +2,293 @@
 
 [한국어](METHODS.ko.md)
 
-Every instrument here is validated before it is used. A measurement device that has not been
-shown to respond to the thing it claims to measure — and to stay silent otherwise — produces
-numbers, not evidence.
+This document is about the **instruments**, not the results. Every device here is validated
+before it is used. A device that has not been shown to respond to the thing it claims to
+measure — and to stay silent otherwise — produces numbers, not evidence.
 
-```
+```text
     subject               isolation            instrument            validation
   ──────────────────────────────────────────────────────────────────────────────────
-  frozen source    →   bwrap namespace   →   model call         →   two-way canary
-  findings         →   provenance-blind  →   clustering         →   ARI gate + cross-vendor
-  candidate code   →   temp dir          →   acceptance suite   →   3-check oracle verify
-  two revisions    →   seeded scenarios  →   differential replay →  planted divergences
-  one revision     →   AST perturbation  →   mutation testing   →   suite must kill them
-  N runs           →   exhaustive subsets →  coverage curve     →   degenerate-case checks
-  observed effect  →   disjoint triples  →   null distribution  →   1680 exhaustive pairs
+  frozen source    →   bwrap namespace   →   model call        →   two-way canary
+  findings         →   provenance-blind  →   clustering        →   ARI gate + cross-vendor
+  candidate code   →   temp directory    →   acceptance suite  →   three-way oracle check
+  two versions     →   seeded scenarios  →   differential replay →  planted divergence
+  one version      →   AST perturbation  →   mutation testing  →   the suite must kill it
+  N runs           →   exhaustive subsets →  coverage curve    →   degenerate-case check
+  observed effect  →   disjoint triples  →   null distribution →   all 1680 pairs
 ```
+
+## The vocabulary that recurs
+
+| term | meaning |
+|---|---|
+| **oracle** | whatever decides that a result is right or wrong. Here, the acceptance suite |
+| **frozen** | fixed before any implementation exists and never edited afterwards — comments and translations included |
+| **acceptance suite** | the tests that check the behaviour the specification guarantees |
+| **finding** | one item a reviewer reported |
+| **arm** | a set of runs with one condition changed — "the structured-prompt arm", for instance |
+| **`UNQUOTABLE`** | the return value when a gate fails: it **withholds the number** rather than qualifying it |
+| **degraded** | a marker that the value could not be measured, kept distinct from a silent zero |
+| **malformed** | a response that would not parse despite a structured-output instruction |
 
 ---
 
-## 1. Isolation — the load-bearing invariant is negative
+## 1. Isolation — the invariant that holds it up is a negative one
 
-Each call is one fresh process inside a `bwrap --unshare-all` namespace. The invariant is
-stated as an absence: **the subject repository is never bound into the namespace**, so an
-absolute-path read of the specification, the answer key or prior findings cannot resolve —
-regardless of which tool-restricting flags the CLI does or does not honour.
+Each call is a fresh process inside a `bwrap --unshare-all` namespace. bwrap builds a new
+filesystem and process view and runs the command inside it, so **a path that was not mounted
+into the namespace does not exist for that process.**
 
-This matters because flags are not a boundary. One CLI's `-s read-only` is a shell-exec
-sandbox policy that *permits* reads; it has no tool switch at all. Sandboxing only that CLI
-would leave read capability asymmetric between models and therefore confounded with model
-identity, so the namespace is applied to both.
+That is why the invariant is stated as an absence: **the target repository is never bound into
+the namespace.** The specification, the answer key, the previous findings — an absolute path to
+any of them simply does not resolve, whether or not the CLI honours its own tool-restriction
+flags.
 
-The prompt is delivered on **stdin**, never argv: a large subject containing quotes, backticks
-or `$` would be mangled or exceed ARG_MAX, and a silently corrupted subject is the worst
-failure available here, because every other number is measured against it.
+Flags are not a boundary. One CLI's `-s read-only` is a shell-execution policy that *permits*
+reads, and it has no tool switch at all. Sandboxing only that CLI would make read capability
+asymmetric between models and confound it with model identity, so the namespace is applied
+identically to both.
 
-The subject is placed **first** at a fixed offset with the instruction after it, so the code
-occupies identical token positions in every arm regardless of which instruction follows.
+Prompts arrive on **stdin**, not in the command line (argv). Large inputs containing quotes,
+backticks and `$` get mangled by the shell or exceed the argument-length limit (ARG_MAX), and
+**silently corrupted input is the worst failure available here** — every other number is
+measured against it.
+
+The target code sits **first**, at a fixed offset, with the instructions after it, so that the
+code occupies the same token positions in every arm no matter what instruction follows.
 
 ### Validation: the two-way canary
 
-*"The model could not read the answer key"* proves nothing. A broken probe returns the same
-answer as perfect isolation: no tools attached, prompt undelivered, CLI dead, permission
-prompt auto-denied.
+*"The model could not read the answer key"* proves nothing on its own. A broken probe returns
+exactly what perfect isolation returns — no tools attached, prompt undelivered, CLI dead, a
+permission prompt auto-denied; all of them look like "could not read it".
 
-So every isolation claim carries both directions **in the same invocation**:
+So every isolation claim carries both directions **within the same call**.
 
+```text
+POS   something that should be reachable, and is      (a planted marker, a system file)
+NEG   something that must not be reachable, and is not (this repository)
 ```
-POS   a target that MUST be reachable, and is       (a planted marker; a system file)
-NEG   a target that MUST NOT be, and isn't          (this repository)
-```
 
-A `Canary` missing either leg raises at construction; `require_pass()` has no override. A
-POS-side failure is reported as a broken probe, not as isolation.
+A `Canary` missing either leg raises at construction, and `require_pass()` has no override.
+A failure on the POS side is reported as a **broken probe**, not as isolation.
 
-The POS leg must also ask only for something **that adapter can actually do** — a read-only
-adapter cannot demonstrate isolation by writing, and reading that failure as a model
-difference would be wrong.
+The POS leg must ask only for **what that adapter can actually do**. Asking a read-only adapter
+to prove isolation by writing produces a failure that would be misread as a model difference.
 
-Raw canary responses are always persisted. A failed canary is the evidence.
+The canary's raw response is always saved. A failed canary is the evidence.
 
-## 2. The acceptance oracle — verified in three directions
+## 2. The acceptance oracle — validated three ways
 
 The contract is the oracle: a specification, a suite derived from it before any implementation
-existed, and a reference implementation used only to check the suite is satisfiable.
+existed, and a reference implementation used only to show the suite is satisfiable.
 
-A suite that has never been exercised cannot be an oracle. Three checks, run in CI on every
-push, before any number from a task is quotable:
+A suite that has never been run cannot be an oracle. CI runs three checks on every push, and no
+number from that task may be quoted until they pass.
 
+```text
+reference passes           the known-good implementation is green         23/23
+floor on import failure    a module that cannot import scores 0,          0 passed
+                           not "everything passed"
+one guarantee removed      delete a guard clause and the suite notices    3 failures
 ```
-reference passes             the known-good implementation is green          23/23
-import failure floors        an unimportable module scores 0, not "all pass"  0 passed
-single-guarantee removal     delete one guard clause, the suite must notice   3 tests fail
-```
 
-The third is the one that matters. A suite that stays green after a guarantee is deleted is
-not measuring that guarantee.
+The third is the point. A suite that stays green after a guarantee is deleted **is not measuring
+that guarantee.**
 
-The suite is **frozen**: authored from the specification before implementation, never edited
-afterwards. That freeze is the only defence against *"the tests were fitted to the
-implementation"*, and it extends to comments and to translating them.
+The second is not trivial either: if a module that cannot even be imported comes back green as
+"0 tests run, 0 failures", that suite will pass anything.
 
-## 3. Grouping findings — three runs, shuffled, gated
+The suite is **frozen** — written from the specification alone, before the implementation, and
+never edited since. That freeze is the only defence against *"the tests were fitted to the
+implementation"*.
 
-Ten reviews describe one defect in ten different sentences. Frequency, overlap and coverage
-mean nothing until they are grouped, and the grouping is done by a model.
+## 3. Clustering the findings — three times, shuffled, behind a gate
 
-Two properties are enforced:
+Ten reviews describe one defect in ten different sentences. Frequency, duplication and coverage
+mean nothing until findings that name the same defect are grouped, and the grouping is done by
+a model.
 
-**Provenance-blind.** The clusterer sees an opaque position, a location and the text — never
-which model, run or arm produced it. Otherwise cluster boundaries could be drawn, however
-unconsciously, in a way that flatters one arm, and every downstream comparison inherits it.
+Two properties are enforced on that grouping.
 
-**Shuffled per run, seeded and recorded.** Identical input order would correlate the runs
-through presentation rather than through the underlying grouping, and the gate would then
-measure prompt determinism instead of clustering stability — passing for the wrong reason.
+**Provenance-blind.** The clusterer sees opaque positions, locators and bodies only. It never
+sees which model, which run or which arm produced a finding. Otherwise the cluster boundaries
+can be drawn — even unconsciously — in a way that favours one arm, and every later comparison
+inherits it.
 
-Three runs, compared by Adjusted Rand Index, medoid taken as the downstream partition.
+**Shuffle the order every run, and record the seed.** With identical input order the three runs
+correlate through *presentation*, and the gate ends up measuring **prompt determinism** rather
+than clustering stability — passing for the wrong reason.
 
-### The gate refuses to produce a number
+The three runs are compared with the Adjusted Rand Index (ARI), which scores how far two
+partitions agree: 1.0 is identical, 0 is no better than random. The partition closest to the
+other two (the medoid) is used downstream.
 
-Below threshold the result is not a number, it is the string `UNQUOTABLE`. A number carried
-with a caveat gets cited without the caveat.
+### The gate refuses to release a number
 
-This has bitten in practice: one arm clustered at **ARI 0.781** and its distinct-defect count
-was therefore never cited anywhere in the study.
+Below threshold the result is the string `UNQUOTABLE`, not a number. **A number that leaves with
+a caveat gets quoted without it.**
 
-### Cross-vendor validation of the instrument
+It bit once: an arm came back at **ARI 0.781**, and that arm's distinct-defect count is quoted
+nowhere in the study.
 
-Three runs of one model agreeing proves consistency, not correctness — they can share a
-systematic bias and agree perfectly while being wrong. So the same 61 findings were grouped by
-a **different vendor's model**, which produced the same 14 groups.
+### Cross-vendor validation of the instrument itself
 
-Observed agreement where it was cited: **ARI 1.000** (single-arm pool), **0.978** (three-arm,
-128 findings), **0.963** (193 findings).
+Three runs of one model agreeing proves consistency, not correctness — models sharing a
+systematic bias can agree perfectly and be wrong together. So the same 61 findings were given to
+**a different vendor's model** to cluster, and the same 14 groups came back.
+
+Measured agreement where it is quoted: **ARI 1.000** (single-arm pool), **0.978** (128 findings
+across three arms), **0.963** (193 findings).
 
 ## 4. The free-space denominator — measured, not asserted
 
-"The loop moved one behaviour" is meaningless without knowing how many it *could* have moved.
-Operational definition:
+"The loop moved one behaviour" means nothing without knowing **how many places there were to
+move.** That denominator was measured with this definition:
 
-> **An answer is defined at a point if perturbing that point is killed by the frozen suite.**
+> **If deliberately altering a point makes the frozen suite fail, the answer at that point is
+> already fixed by the contract.**
 
-Mutation testing over the reference implementation, one AST perturbation at a time, each
-mutant run against the frozen suite:
+The reference implementation's conditions and operators are altered one at a time, at the AST
+level, and each altered version — a mutant — is run against the frozen suite.
 
-```
+```text
 120 mutation points
-  104  killed by the suite -- the contract pins them          (87%)
-   16  survive, and are then classified by hand:
-         9  observationally equivalent (differential testing cannot distinguish them)
-         4  suite holes -- the suite fails to check the reverse direction
-         3  genuinely free, forming one region
+  104  killed by the suite — fixed by the contract       (87%)
+   16  survive, classified by hand:
+         9  observationally equivalent (not even the differential test separates them)
+         4  gaps in the suite — it never checks the opposite direction
+         3  genuinely free, forming a single region
 ```
 
-The 4 suite holes are a finding about the oracle, not about the model: `if x < 0` mutated to
-`if x < 1` passes all 23 tests while rejecting valid configurations, because the criterion
-states what must be rejected and never checks what must be accepted.
+Those four gaps are a finding about **the oracle**, not about any model. Changing `if x < 0` to
+`if x < 1` leaves all 23 tests passing, because the criterion says only *what must be rejected*
+and never checks *what must be accepted* — so code that rejects a valid configuration passes.
 
-47 loop rounds moved exactly one observable behaviour, inside that single free region — a
-one-to-one match between where the model moved and where the contract was silent.
+Across 47 loop rounds, observable behaviour moved in exactly one place, inside that single free
+region: where the model moved and where the contract was silent line up one to one.
 
-## 5. Differential testing — and the harness is tested first
+## 5. Differential testing — and testing the harness first
 
-Two revisions are compared by replaying **300 seeded operation scenarios** against both and
-diffing the observable traces. This is possible only because the subject is fully
-deterministic: time, sleep and randomness are all injected.
+A differential test **replays identical inputs** against two versions and looks for a divergence
+in what is observable. Here, 300 seeded operation scenarios are replayed against each version
+and the traces compared. It is possible because the subject is fully deterministic — time, sleep
+and randomness are all injected from outside.
 
-The harness itself is validated against planted changes before it is trusted:
+Before trusting the harness, it is validated with planted changes.
 
-```
-v0 against v0                              0/300     no false positives
-jitter multiplied before the cap           39/300    real differences ARE caught
-comment-only / message-only edits           0/300    style changes are NOT caught
-```
-
-On the second task the same check was run against deliberately inverted free-region choices:
-**95/400, 400/400, 369/400** — all caught.
-
-Divergences are then reduced to **signatures** so that "how many distinct behaviour changes"
-is a count, not an impression.
-
-## 6. Chance baselines — computed exhaustively, not estimated
-
-Because one review pass sees only part of the field, a second batch produces "new" findings
-even with the code unchanged. Quoting a new-finding rate without that baseline measures the
-sampling, not the fix.
-
-The null distribution was built by enumerating **all 1680 disjoint triples** within the
-existing pool of nine reviews of unchanged code — no additional model calls:
-
-```
-null (code unchanged)     median 11%, range 0-31%
-after a merged fix        77% / 89% / 63%      100th percentile of the null
+```text
+v0 against v0                          0/300     no false positives
+jitter multiplied before the cap       39/300    real differences are caught
+comments / exception messages only     0/300     style changes are not caught
 ```
 
-## 7. Budget curves — exhaustive over subsets already paid for
+The second task ran the same check by deliberately flipping choices in the free region —
+**95/400, 400/400, 369/400**, all caught.
 
-"How much would k calls have found?" is not an estimate when N independent runs exist. It is
-the mean over all C(N,k) subsets, and it costs nothing further.
+Divergences are reduced to **signatures**, so that "how many distinct behaviour changes" is a
+count rather than an impression of how many scenarios differed.
 
-The implementation is checked against degenerate cases before use: pools where every run finds
-the same set must give a constant, and pools where runs are disjoint must scale linearly.
+## 6. The chance baseline — enumerated, not estimated
 
-Mixed-model curves enumerate every split of k between the two arms and report the best,
-alongside the split that produced it.
+Because one review never sees everything, a second batch produces "new" findings even when the
+code has not changed. Quoting a novelty rate without that baseline measures sampling, not the
+fix.
+
+That baseline is the null distribution — how far the value ranges when there is no effect at
+all. It was built by enumerating **all 1680 pairs of disjoint triples** within nine existing
+reviews of unchanged code. No extra model calls.
+
+```text
+null (code unchanged)     median 11%, range 0–31%
+after the merged fix      77% / 89% / 63%      the 100th percentile of the null
+```
+
+## 7. The budget curve — exhaustive over subsets already paid for
+
+Given N independent runs, "how much would k calls have found" needs no estimate. It is the
+average over every way of choosing k of the N, and it costs nothing extra.
+
+The implementation is checked against degenerate cases before it is used: a pool where every run
+finds the same set must give a flat curve, and a pool of disjoint runs must rise linearly.
+
+The mixed curve enumerates every split of k across the two arms, reports the best, and records
+which split produced it.
 
 ## 8. Complexity — a proxy chosen on evidence, not familiarity
 
-Cyclomatic complexity was **deliberately excluded**: it correlates with lines of code at
-r ≈ 0.85–0.87, so it adds almost nothing on top of size. Measured on this data, r = 0.807.
+Cyclomatic complexity was **deliberately excluded.** Its correlation with LOC is r ≈ 0.85–0.87,
+so it adds almost nothing on top of size. Measured in this data it came to r = 0.807.
 
-Cognitive Complexity was used instead, because its correlation with *comprehension time* has
-been measured empirically. It is still a proxy, and is reported as one.
+Cognitive Complexity was used instead: it measures how much nesting and branching a reader has
+to hold in their head, and its correlation with *comprehension time* has been measured
+empirically. It is still a proxy, and it is reported as one.
 
-Reported alongside, never alone: line count, cumulative churn, surviving mutant count, and
-acceptance-suite compliance. Compliance was identical across ten arms and 47 rounds, which is
-itself the finding — the metric everyone reaches for discriminates nothing.
+It is never reported alone. Line count, cumulative churn, surviving mutants and acceptance
+compliance go out beside it. Compliance was identical across all ten arms and 47 rounds, and
+**that is itself a finding** — the metric everyone reaches for first discriminates nothing.
 
-Absolute surviving-mutant counts are preferred to ratios: the ratio moved 0.83–0.90 across all
-arms and supports no claim, while the absolute count separated one arm cleanly (16 → 24).
+Surviving mutants are reported as an **absolute count**, not a ratio. The ratio moved only
+between 0.83 and 0.90 across every arm and supported no claim; the count separated one arm
+cleanly (16 → 24).
 
-## 9. Prompt variants — derived by script, diff-checked
+## 9. Prompt variants — derived by script, verified by diff
 
-Hand-writing six category prompts makes vocabulary, emphasis and output rules drift, and that
-drift is then read as the arm's effect. Variants are derived from a base by script, and the
-diff must show **exactly one axis** changing.
+Writing six category prompts by hand lets vocabulary, emphasis and output rules drift, and that
+drift then reads as the effect of the arm. So variants are derived from a base by script, and
+the diff must show **exactly one axis** changing.
 
-What stays byte-identical, because each is a confound:
+What stays byte-identical, because each would otherwise be a confound:
 
-- the output schema and the per-call finding cap
-- the permissive clause *"an empty result is a valid answer"* — removing it pressures a
-  specialist into saying **something** in its area, and the arm's higher finding count
-  becomes an artefact of the prompt rather than a measurement
-- the instruction to cite a specific line
+- the output schema and the per-call cap on findings
+- the permissive clause *"an empty result is a valid answer"* — delete it and a specialist
+  reviewer is under pressure to say **something** in its area, at which point that arm's higher
+  finding count is an artefact of the prompt rather than a measurement
+- the instruction to point at specific lines
 
-The derivation script self-checks that only one block changed, and every result records the
-prompt SHA-256.
+The derivation script checks that only one block changed, and every result records the prompt's
+SHA-256.
 
-## 10. Adjudication — blind, with an internal control
+## 10. Adjudication — blinded, with an internal control
 
-Where "is this finding real" requires judgement, the procedure is fixed in advance:
+Where human judgement is needed for *"is this finding real"*, the procedure is fixed in advance.
 
-- exclusive findings are **mixed with findings both arms produced** and the order shuffled, so
-  the adjudicator cannot tell which arm produced which;
-- the common set functions as an internal control — if the exclusive set is not better, the
-  difference shows up against it;
-- the answer key is written to a separate file and not opened until the verdicts are recorded.
+- findings exclusive to one arm are **mixed with findings both arms produced** and shuffled, so
+  the adjudicator cannot tell which arm anything came from
+- the shared set then acts as an internal control: if the exclusive set is no better, the
+  contrast shows it
+- the answer key is written to a separate file and not opened until the verdicts are recorded
 
-Adjudication remains the weakest link in this work, and is labelled as such wherever its
-numbers appear: the adjudicator was the study's author. Tier-1 tasks exist precisely because
-they need no adjudication at all.
+Adjudication remains the weakest link in this work, and it is marked as such everywhere its
+numbers appear, because the adjudicator was the author of the study. That is exactly why the
+tier-1 tasks exist: there, no adjudication is needed at all.
 
-## 11. Pre-registration and the no-retry rule
+## 11. Pre-registration, and no retries
 
-Predictions are frozen before data, hashed, and refused at construction if they carry no
-falsification condition. An edited frozen file fails to load. Runs without a pre-registration
-are branded `exploratory: true` in the result and the ledger.
+Predictions are frozen and hashed before the data is seen. A prediction without a
+**falsification condition** — what result would show it wrong — is rejected at construction. A
+frozen file that is edited afterwards fails to load. A run without pre-registration is branded
+`exploratory: true` in its result and in the ledger.
 
-Of five predictions frozen in this study, **two failed** — and both failures were more
-informative than the successes. Neither would have survived post-hoc narration.
+Of the five predictions frozen in this study, **two failed**, and those two were more
+informative than the three that held. Neither would have survived being written up afterwards.
 
-**No call is ever retried.** There is no retry parameter, and a test enforces its absence.
-Retrying until a response is well-formed selects for well-behaved samples and biases exactly
-the variance being measured. Failed and malformed calls are recorded and kept; where one ended
-a loop early, the loop is reported as ending early rather than restarted.
+**No call is ever retried.** `call()` has no retry parameter and a test enforces its absence.
+Calling again until a response parses selects for well-behaved samples, which biases the very
+variance being measured. Failed and unparseable calls are recorded and kept, and if one ended a
+loop early, the loop is not restarted — it is **reported as having ended early.**
 
 ---
 
 ## What the instruments refuse to do
 
-| situation | what you get |
+| situation | what comes out |
 |---|---|
-| clustering does not reproduce | `UNQUOTABLE`, not a number with a footnote |
-| fewer than three loops | `None`, not a majority of two |
-| fewer than four points in a series | no ratio for that loop |
-| usage not reported by the CLI | `degraded`, never a silent zero |
-| canary POS leg fails | a raised exception; the run does not proceed |
+| clustering does not reproduce | `UNQUOTABLE`. Not a number with a footnote |
+| fewer than three loops | `None`. Not a two-out-of-three verdict |
+| a series with fewer than four points | no ratio for that loop |
+| the CLI reports no usage | `degraded`. Not a silent zero |
+| a canary POS leg fails | an exception. The run does not proceed |
 | a prescription rule has no evidence grade | it does not render |
 
-Each of those is a case where a number could have been produced and would have been wrong.
+Each is a place where a number could have been produced, and would have been wrong.
