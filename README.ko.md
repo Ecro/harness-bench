@@ -65,6 +65,10 @@ harness-bench 는 **실험 모음**이다. `core` 가 측정 기계 — 샌드�
 | claude-opus-5 | 30 | $15.74 | −1.25 | 수렴 안 함 | 0.209 | **1.258×** | 가능 |
 | gpt-5.6-sol | 24 | 미상 | −0.25 | 측정 불가 | 0.273 | **0.906×** | **불가** |
 
+`loop_decay` 는 라운드가 갈수록 지적 수가 줄어드는 기울기, `churn` 은 한 라운드에서
+추가·삭제된 줄 수(손댄 양이지 품질이 아니다), `코드 크기` 는 마지막 라운드를 시작 코드로 나눈
+값이다. 각 열의 정의는 [실험 문서](docs/review-convergence/README.ko.md#원장)에 있다.
+
 54개 루프 라운드 전체에서 **계약 준수가 매 라운드 유지됐다** — 그러는 동안 리뷰어들은
 이미 23개 인수 테스트를 전부 통과하는 코드에 대해 패스당 3~14건을 계속 보고했다. 전체
 표는 [`results/ledger-review_convergence.md`](results/ledger-review_convergence.md) 이고
@@ -97,15 +101,18 @@ bench prescribe --exp $EXP --model claude    # 특성 → 운용 처방
 **prescription**(특성을 하네스 설정으로 옮긴 것, 줄마다 근거 등급 병기).
 
 ```
-## 운용 처방
-  [**]  round_cap     라운드 상한을 걸어라 — churn 이 수렴하지 않는다
-  [***] loop_budget   루프를 짧게 끊어라 — 이 모델은 라운드마다 코드를 불린다
-        ← loc_direction > 1.15
+## Operating prescription
+  [** ] round_cap                cap the rounds
+        ← churn does not converge, so the loop has no self-firing stop condition
+  [***] loop_budget              keep the loop short - this model grows the code each round
+        ← loc_direction > 1.15; the opposite direction was measured on the other model
 
-  등급: *** 두 모델 이상에서 재현 · ** 단일 측정 · * 판단
+  grades: *** reproduced across models | ** measured once | * judgement, not measured
 ```
 
-등급 없는 규칙은 렌더되지 않는다.
+CLI 출력은 영어다. 대괄호 안이 **근거의 강도**이고 — `***` 두 모델 이상에서 재현,
+`**` 한 번 측정, `*` 판단 — 문서에서는 같은 등급을 `[근거: 재현됨]` 처럼 풀어 쓴다.
+등급 없는 규칙은 아예 렌더되지 않는다.
 
 ## 구조
 

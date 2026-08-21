@@ -67,6 +67,11 @@ Task `retry_policy`, two models, three loops each — measured 2026-08-21:
 | claude-opus-5 | 30 | $15.74 | −1.25 | does not converge | 0.209 | **1.258×** | yes |
 | gpt-5.6-sol | 24 | n/a | −0.25 | not measurable | 0.273 | **0.906×** | **no** |
 
+`loop_decay` is the slope of findings per round, `churn` is the lines added and deleted in a
+round (how much was touched, not a quality measure), and `code size` is the final round divided
+by the starting code. Every column is defined in the
+[experiment's page](docs/review-convergence/README.md#the-ledger).
+
 Across 54 loop rounds, **contract compliance held in every single round** — while reviewers
 kept reporting 3–14 findings per pass on code that already passes all 23 acceptance tests.
 The full table is [`results/ledger-review_convergence.md`](results/ledger-review_convergence.md),
@@ -101,14 +106,16 @@ each line carrying an evidence grade).
 
 ```
 ## Operating prescription
-  [**]  round_cap     cap the rounds — churn does not converge
-  [***] loop_budget   keep the loop short; this model grows the code each round
-        ← loc_direction > 1.15
+  [** ] round_cap                cap the rounds
+        ← churn does not converge, so the loop has no self-firing stop condition
+  [***] loop_budget              keep the loop short - this model grows the code each round
+        ← loc_direction > 1.15; the opposite direction was measured on the other model
 
-  grades: *** reproduced across models · ** measured once · * judgement
+  grades: *** reproduced across models | ** measured once | * judgement, not measured
 ```
 
-An ungraded rule does not render.
+The bracket is the **strength of the evidence**. The documents spell the same grades out as
+`[evidence: reproduced]` and so on. An ungraded rule does not render at all.
 
 ## Layout
 
