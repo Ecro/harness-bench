@@ -1,0 +1,24 @@
+harness-bench
+Copyright 2026 Ecro
+
+이 배포물은 두 라이선스로 나뉜다.
+
+CODE - Apache License 2.0 (LICENSE)
+  harness_bench/**/*.py
+  tests/**
+  pyproject.toml
+
+DATA, PROMPTS, TASKS, RESULTS - Creative Commons Attribution 4.0 (LICENSE-DATA)
+  harness_bench/experiments/**/prompts/**
+  harness_bench/experiments/**/tasks/**     (SPEC.md, test_acceptance.py, reference.py)
+  harness_bench/experiments/**/fixtures/**
+  results/**
+  docs/**
+
+왜 나눴는가 - 프롬프트와 과제 명세와 판정 결과는 코드가 아니라 저작물이다. 재사용은
+열어두되 귀속은 요구한다. 이 벤치의 수치가 인용될 때 출처가 남아야 결과가 추적된다.
+
+코드가 Apache-2.0 인 이유는 특허 조항 때문이다. 벤치마크는 포크되고 제품에 들어가는 것이
+목적이므로 그 마찰을 줄여야 한다.
+
+이 저장물의 일부는 SpotOn (github.com/Ecro/spoton) 에서 수행된 연구에서 파생됐다.
