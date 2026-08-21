@@ -2,130 +2,157 @@
 
 [한국어](DESIGN.ko.md)
 
-`harness-bench` measures **harness design**, not model capability. It answers a practical
-question: *given this model, how should the loop around it be configured?*
+`harness-bench` measures **harness design**, not model capability. The harness is the loop, the
+prompts, the tool access and the stop condition wrapped around a model. The question it answers
+is a practical one — *given this model, how should the loop around it be built?*
+
+This document covers that structure, and why each of the six disciplines is enforced in code.
 
 ---
 
 ## 1. Two layers, one boundary
 
-```
+```text
 harness_bench/
   core/                     knows HOW to measure, not WHAT
-    sandbox/    filesystem isolation + two-way canary framework
-    runner/     model adapters · no-retry call · token accounting
-    cluster/    provenance-blind grouping + ARI stability gate
-    prereg/     frozen predictions · exploratory branding
-    stats/      exhaustive coverage · mutation · differential replay · complexity
-    ledger/     result store · model profile · prescription rendering
+    sandbox/    filesystem isolation + the two-way canary framework
+    runner/     model adapters · calls without retry · token accounting
+    cluster/    provenance-blind clustering + the ARI stability gate
+    prereg/     frozen predictions · the exploratory brand
+    stats/      exhaustive-subset coverage · mutation · differential replay · complexity
+    ledger/     result storage · model profiles · prescription rendering
   experiments/
     review_convergence/     tasks · prompts · oracle · metrics · traits
 ```
 
-**The boundary rule:** `core` may not import `experiments`, and may not carry domain
-vocabulary in code. Enforced by `tests/test_core_boundary.py`.
+**The boundary rule**: `core` may not import `experiments`, and may not carry domain vocabulary
+in code. `tests/test_core_boundary.py` enforces both halves.
 
-An experiment supplies exactly five things — **tasks, prompts, oracle, metrics,
-pre-registration**. Anything else it needs means core is incomplete, not that the boundary
-should bend. The boundary is fixed now, while there is one experiment, because a benchmark
-whose measurement conditions shift is not a benchmark.
+An experiment supplies core with exactly five things — **tasks, prompts, oracle, metrics,
+pre-registration**. The oracle here means whatever decides that a result is right or wrong;
+pre-registration means freezing the predictions before the data is seen.
 
-## 2. Output is a profile and a prescription, not a score
+If something else is needed, core is incomplete — that is not a place to bend the boundary. The
+boundary is fixed now, while there is only one experiment, because **a benchmark whose
+measurement conditions move is not a benchmark.**
 
-A score ranks models. A **profile** tells you how to operate the one you have.
+## 2. The output is a profile and a prescription, not a score
 
+A score ranks models. A **profile** tells you how to operate the model you already have. The
+profile is the set of measured traits; the prescription carries those traits into harness
+settings.
+
+```text
+measured trait                           →  the knob it decides
+────────────────────────────────────────────────────────────
+spread          variance between runs     →  how many reviews to run
+loop_decay      do findings fall off      →  is a round cap needed
+churn_dries     does churn converge       →  can churn be a stop rule
+rejection_rate  when used as the fixer    →  must the contract be supplied too
+loc_direction   does it grow or shrink    →  how long the loop may run
+malformed_rate  JSON compliance           →  can structured output be trusted
+tools_blockable can its tools be disabled →  is it comparable at all
 ```
-measured trait                        →  harness knob it decides
-────────────────────────────────────────────────────────────────
-spread          run-to-run variance   →  how many review passes
-loop_decay      do findings decline   →  is a round cap needed
-churn_dries     does churn converge   →  can churn be a stop rule
-rejection_rate  as a fixer            →  does it need the contract document
-loc_direction   grows or shrinks code →  how long the loop may run
-malformed_rate  JSON adherence        →  can structured output be trusted
-tools_blockable can tools be disabled →  is it comparable at all
-```
 
-Mapping rules live with the experiment (`traits.py`); core owns the schema and the renderer.
+`spread` is how much the finding count moves across repeated reviews of the same code; `churn`
+is the lines added and deleted in a round; `rejection_rate` is the share of findings the fixer
+refused with a stated reason; `malformed_rate` is the share of responses that would not parse
+despite a structured-output instruction.
+
+The mapping rules belong to the experiment (`traits.py`); core owns the schema and the renderer.
 The next experiment brings different knobs.
 
-**Evidence grades are mandatory.** Every rule carries `***` (reproduced across models),
-`**` (measured once), or `*` (judgement). A rule without a grade will not render — an
-ungraded recommendation launders opinion into advice.
+**Evidence grades are mandatory.** Every rule carries `***` (reproduced across two or more
+models), `**` (measured once) or `*` (judgement). An ungraded rule does not render — without a
+grade, an opinion is laundered into advice.
 
 ## 3. Six disciplines, enforced in code
 
-Each is a runtime gate. Violations do not produce a warning; they produce a refusal.
+Each is a runtime gate. A violation produces a refusal, not a warning.
 
-### Two-way canary
+### The two-way canary
 
-*"The model could not read the answer key"* proves nothing on its own: a broken probe returns
-the same answer as perfect isolation — no tools attached, prompt undelivered, CLI dead,
-permission prompt auto-denied.
+A canary is a probe that checks the instrument is actually attached before anything is measured.
 
-Every isolation claim carries both legs in the same invocation: a **POS** target that must be
-reachable, and a **NEG** target that must not be. A `Canary` missing either leg raises at
-construction. `require_pass()` has no override flag, and a POS-side failure is reported as a
-broken probe, not as isolation.
+*"The model could not read the answer key"* proves nothing by itself, because a broken probe
+returns **exactly what perfect isolation returns** — no tools attached, prompt undelivered, CLI
+dead, a permission prompt auto-denied; all of them look like "could not read it".
 
-A canary must also probe only what the adapter can actually do. A read-only adapter cannot
-demonstrate isolation by writing.
+So every isolation claim carries both legs **within the same call**: a **POS** target that
+should be reachable and a **NEG** target that must not be. A `Canary` missing either raises at
+construction, and `require_pass()` has no override flag. A failure on the POS side is reported
+as a **broken probe**, not as isolation.
 
-### No retry
+A canary must also probe only **what that adapter can actually do**. A read-only adapter cannot
+be asked to prove isolation by writing.
 
-`call()` has no retry parameter, and a test enforces its absence. Retrying until a response
-is well-formed selects for well-behaved samples and biases the very variance being measured.
-A failed or malformed call is recorded and returned; if you want another sample, make an
-independent call and record it as one.
+### No retries
 
-### ARI gate
+`call()` has no retry parameter, and a test enforces its absence. Calling again until a response
+parses **keeps only the well-behaved samples**, and that variance is the thing being measured.
 
-Findings must be grouped before frequency, overlap or coverage mean anything, and the
-grouping is done by a model. Three runs, shuffled per run with a recorded seed, and the
-partitions compared by Adjusted Rand Index.
+Failed and unparseable calls are recorded and returned as they are. If more samples are needed,
+make an **independent call** and record it as an independent observation.
 
-Below threshold the result is not a number — it is the string `UNQUOTABLE`. A number carried
-with a caveat gets cited without the caveat.
+### The ARI gate
 
-Shuffling matters: identical input order would correlate the runs through presentation and
-make the gate measure prompt determinism instead of clustering stability.
+Frequency, duplication and coverage mean nothing until findings naming the same defect are
+grouped, and a model does the grouping. So it runs three times, shuffling the order every run
+(and recording the seed), and compares the three partitions with the Adjusted Rand Index (ARI),
+which scores how far two partitions agree — 1.0 is identical.
+
+Below threshold the result is the string `UNQUOTABLE`, not a number. **A number that leaves with
+a caveat gets quoted without it.**
+
+The shuffling matters. With identical input order the three runs correlate through
+*presentation*, and the gate ends up measuring **prompt determinism** rather than clustering
+stability.
 
 ### Pre-registration
 
-A prediction without a falsification condition is a description, and is rejected at
-construction. Frozen files are hashed; editing one after the fact fails to load.
+A prediction with no falsification condition — what result would show it wrong — is a
+description, not a prediction, and is rejected at construction. Frozen files are hashed, and
+editing one afterwards makes it fail to load.
 
-A run without a pre-registration is not forbidden — it is **branded**. `exploratory: true`
-travels into the result and into the ledger.
+A run without pre-registration is not forbidden, it is **branded**: `exploratory: true` follows
+it into the result and the ledger.
 
-### Machine-derived prompts
+### Prompts derived by machine
 
-Prompt variants are derived from a base by script, and the diff must show exactly one axis
-changing. Output schema, caps, and permissive clauses such as *"an empty result is a valid
-answer"* stay byte-identical: removing that one clause turns a fan-out arm's finding count
-into an artefact of the prompt. Every result records the prompt SHA-256.
+Prompt variants are derived from a base by script, and the diff must show **exactly one axis**
+changing. The output schema, the per-call cap and permissive clauses such as *"an empty result
+is a valid answer"* stay byte-identical.
 
-### Environment before attribution
+Delete that last clause and a specialist reviewer is under pressure to say something in its
+area; that arm's higher finding count then becomes **an artefact of the prompt** rather than a
+measurement. Every result records the prompt's SHA-256.
 
-Model behaviour and harness configuration are indistinguishable from the outside. Before a
-difference is recorded as a model property, the configuration is verified in both directions.
-Concretely: scratch roots are refused under `/tmp` (a CLI may refuse to materialise sandbox
-helpers there), resolved model ids are captured rather than aliases, and adapters declare
-whether tools can be disabled at all.
+### Verify the environment before attributing anything
 
-## 4. Reproduction gate
+Model behaviour and harness configuration are indistinguishable from the outside. Before
+recording a difference as a property of the model, the configuration is verified in both
+directions.
 
-Porting risk is not a crash; it is silent drift — the code runs, the numbers look plausible,
-nobody compares them to before. So stored artefacts are re-analysed by the new code and
-checked against the prior values, **without calling a model**. A reproduction gate that calls
-a model is not reproducing anything; it is running a new experiment.
+Concretely: a scratch root under `/tmp` is refused (some CLIs refuse to materialise sandbox
+helpers there, and that failure looks exactly like a model declining to use a capability); the
+**resolved** model id is recorded rather than the alias that was requested; and every adapter
+declares whether its tools can be disabled at all.
+
+## 4. The reproduction gate
+
+The real risk in a port or a refactor is not a crash but **silent drift** — the code runs, the
+numbers look plausible, and nobody checks them against the previous ones.
+
+So stored artefacts are re-analysed with the new code and compared against the earlier values,
+**without calling a model.** A reproduction gate that calls a model is not a reproduction; it is
+a new experiment.
 
 ## 5. Secrets
 
-The runner copies real credentials into a scratch HOME so the CLIs can authenticate. One
-commit of that directory is irreversible, so three layers guard it: `.gitignore`, a
-`pre-commit` hook, and CI — all three sharing `tools/secret_scan.sh` so the patterns cannot
-diverge.
+The runner copies real credentials into a scratch HOME so the CLI can authenticate. Committing
+that directory even once cannot be undone, so three layers guard it — `.gitignore`, the
+`pre-commit` hook, and CI. All three share `tools/secret_scan.sh` so the patterns cannot drift
+apart.
 
-The scanner self-tests against a planted token before every run. *"Nothing found"* is the
-same output a broken scanner produces.
+The scanner self-tests against a planted token before every run, because *"nothing found"* is
+also what a broken scanner reports.
