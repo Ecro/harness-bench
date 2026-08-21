@@ -1,15 +1,17 @@
-"""이 실험의 측정 계획 — bench run 이 실제로 하는 일.
+"""Measurement plan for this experiment -- what `bench run` actually does.
 
-tier-1 프로파일 한 벌의 비용:
+Cost of one tier-1 profile:
 
-    변동폭   n_spread 콜        같은 v0 를 반복 리뷰. 코드가 안 바뀌므로 순수 관측
-    루프     n_rounds × 2 콜    리뷰 → 수정 → 오라클. 궤적·churn·거절률·준수
-    나머지   0 콜               LOC/AC/malformed 는 위 산출물에서 파생
+    spread    n_spread calls              repeated review of the verified v0; code never
+                                          changes, so the observation IS the variance
+    loop      n_loops x n_rounds x 2      review -> fix -> oracle
+    derived   0 calls                     LOC, compliance, malformed and rejection rates
+                                          all fall out of the artefacts above
 
-기본값(5, 5)이면 **15콜**이다. 새 모델 하나를 표에 얹는 값이 그 정도여야 한다 —
-더 비싸면 아무도 새 모델을 안 얹는다.
+Defaults come to ~35 calls per model. Adding a new model to the table should cost about
+that; make it more expensive and nobody adds one.
 
-★ 재시도는 없다. 실패한 라운드는 거기서 멈추고 그때까지의 관측만 쓴다.
+No retries. A failed round stops that loop and only the observations up to it are used.
 """
 from __future__ import annotations
 
@@ -50,29 +52,31 @@ def _dries(churns: list[int]) -> bool | None:
 
 
 def _dries_across(series: list[list[int]]) -> tuple[bool | None, list, str]:
-    """여러 루프의 판정을 합친다.
+    """Combine the per-loop verdicts.
 
-    D-001 이 이 함수를 만들게 했다. 원 연구와 이 레포의 첫 측정이 claude 의 churn
-    방향에 대해 정반대로 나왔는데, **양쪽 다 루프 하나**였다. churn 계열은 시끄럽고
-    (한 루프에서 27 다음에 46), 루프 하나의 방향은 방향이 아니라 표본이다.
+    Churn series are noisy -- a single loop can go 106, 69, 82, 51, 75 -- and the observed
+    ratios for one model clustered at 0.611-0.732, straddling the 0.7 threshold. A single
+    loop therefore lands on either side of the boundary by chance: one loop's direction is a
+    sample, not a direction.
 
-    그래서 루프 3개 미만이면 **판정하지 않는다**. 3개 이상이면 다수결로 하되,
-    갈리면(예: 2:1) 그 사실을 note 에 남긴다 -- 다수결이 만장일치를 가장하지 않도록.
+    So below MIN_LOOPS this returns None rather than a verdict. At or above it, majority
+    rules, and a split (e.g. 2:1) is stated in the note so a majority never passes itself off
+    as unanimity. Read `churn_ratio` alongside the boolean.
     """
     ratios = [_ratio(c) for c in series]
     usable = [r for r in ratios if r is not None]
     if len(usable) < MIN_LOOPS:
-        return None, ratios, f"루프 {len(usable)}/{MIN_LOOPS} -- 판정 불가 (D-001)"
+        return None, ratios, f"{len(usable)}/{MIN_LOOPS} loops usable -- not judged"
     votes = [r < DRY_THRESHOLD for r in usable]
     yes = sum(votes)
     verdict = yes > len(votes) / 2
-    split = "만장일치" if yes in (0, len(votes)) else f"갈림 {yes}:{len(votes)-yes}"
+    split = "unanimous" if yes in (0, len(votes)) else f"split {yes}:{len(votes)-yes}"
     return verdict, ratios, f"{split} · ratios={[round(r,3) for r in usable]}"
 
 
 def _ratio(churns: list[int]) -> float | None:
     if len(churns) < 4:
-        return None          # 4점 미만에서 추세를 말하는 것은 잡음을 읽는 것이다
+        return None          # calling a trend below this is reading noise
     h = len(churns) // 2
     first = sum(churns[:h]) / h
     return round(sum(churns[-h:]) / h / first, 3) if first else None
@@ -98,7 +102,7 @@ def measure(adapter_name: str, task_slug: str = "retry_policy", *,
     root = (out_dir or CONFIG.scratch_root / "run") / adapter_name / task_slug
     calls: list = []
 
-    # --- 변동폭: 코드가 안 바뀌므로 관측이 곧 변동폭이다 --------------------
+    # --- spread: the code never changes, so the observation IS the variance -
     counts = []
     for i in range(n_spread):
         r = call(adapter, "review", _compose_review(spec, v0), root / f"spread{i}")
@@ -109,7 +113,7 @@ def measure(adapter_name: str, task_slug: str = "retry_policy", *,
         if n is not None:
             counts.append(n)
 
-    # --- 루프 (n_loops 회 독립 반복) -------------------------------------
+    # --- loop (n_loops independent repetitions) --------------------------
     all_churns: list[list[int]] = []
     round_counts: list[int] = []
     dec_total = dec_rej = 0
@@ -122,17 +126,17 @@ def measure(adapter_name: str, task_slug: str = "retry_policy", *,
             rv = call(adapter, "review", _compose_review(spec, module), d)
             calls.append(rv); save(rv, d, "review")
             if rv.status != "ok":
-                log(f"  L{loop} R{rnd}: review {rv.status} — 중단 (재시도 없음)"); break
+                log(f"  L{loop} R{rnd}: review {rv.status} - stopping loop (no retry)"); break
             findings = (rv.parsed or {}).get("findings", [])
             counts_l.append(len(findings))
             if not findings:
-                log(f"  L{loop} R{rnd}: 지적 0 — 종료"); break
+                log(f"  L{loop} R{rnd}: 0 findings - loop ends"); break
 
             fx = call(adapter, "fix", _compose_fix(spec, module, findings), d)
             calls.append(fx); save(fx, d, "fix")
             new = (fx.parsed or {}).get("code")
             if fx.status != "ok" or not new:
-                log(f"  L{loop} R{rnd}: fix {fx.status} — 중단 (재시도 없음)"); break
+                log(f"  L{loop} R{rnd}: fix {fx.status} - stopping loop (no retry)"); break
 
             dec = (fx.parsed or {}).get("decisions", []) or []
             dec_total += len(dec)
@@ -140,8 +144,8 @@ def measure(adapter_name: str, task_slug: str = "retry_policy", *,
             churns.append(_churn(module, new))
             o = oracle.run(new, task.suite, task.module_name)
             ac_ok &= o.green
-            log(f"  L{loop} R{rnd}: {len(findings)}건 → churn {churns[-1]}, "
-                f"{len(new.splitlines())}줄, {o.passed}/{o.total} "
+            log(f"  L{loop} R{rnd}: {len(findings)} findings -> churn {churns[-1]}, "
+                f"{len(new.splitlines())} loc, {o.passed}/{o.total} "
                 f"{'GREEN' if o.green else 'RED'}")
             module = new
         if churns:
@@ -151,7 +155,7 @@ def measure(adapter_name: str, task_slug: str = "retry_policy", *,
         final_module = module
     module = final_module
 
-    # --- 파생 (LLM 콜 0) ---------------------------------------------------
+    # --- derived (no model calls) -----------------------------------------
     _verdict, _ratios, _note = _dries_across(all_churns)
     ok = [c for c in calls if c.status == "ok"]
     cost = [c.usage.cost_usd for c in ok if c.usage.cost_usd is not None]
@@ -166,13 +170,13 @@ def measure(adapter_name: str, task_slug: str = "retry_policy", *,
         "loop_decay": T("loop_decay",
                         round((round_counts[-1] - round_counts[0]) / (len(round_counts) - 1), 2)
                         if len(round_counts) > 1 else None, note=str(round_counts)),
-        # 마지막 값 하나로 판정하지 않는다. churn 계열은 시끄럽고([70,58,27,46,33]),
-        # 마지막-대-처음 비교는 잡음 하나에 뒤집힌다. 전반부 평균 대 후반부 평균으로
-        # 보고, 4점 미만이면 아예 판정하지 않는다(None).
+        # Not judged from the last value alone: churn series are noisy and a last-vs-first
+        # comparison flips on a single point. Mean of the first half against the mean of the
+        # last half, and below MIN_POINTS no verdict at all.
         "churn_dries": T("churn_dries", _verdict, note=_note),
         "churn_ratio": T("churn_ratio",
                          round(sum(u) / len(u), 3) if (u := [r for r in _ratios if r]) else None,
-                         "후/전", note=f"루프별 {[round(r,3) if r else None for r in _ratios]}"),
+                         "last/first", note=f"per loop {[round(r,3) if r else None for r in _ratios]}"),
         "rejection_rate": T("rejection_rate",
                             round(dec_rej / dec_total, 3) if dec_total else None,
                             note=f"{dec_rej}/{dec_total}"),
@@ -184,14 +188,14 @@ def measure(adapter_name: str, task_slug: str = "retry_policy", *,
                            round(len(module.splitlines()) / len(v0.splitlines()), 3)
                            if all_churns else None, "×"),
         "tools_blockable": T("tools_blockable", adapter.tools_blockable),
-        # tier-2 전용 — tier-1 이 원리적으로 못 잰다. 추정으로 채우지 않는다.
-        "finds_per_call": T("finds_per_call", None, note="tier-2 전용 (판정된 결함 집합 필요)"),
-        "verbosity_shift": T("verbosity_shift", None, note="tier-2 전용 (리포 접근 대비 필요)"),
+        # tier-2 only -- tier-1 cannot measure these. Not filled with estimates.
+        "finds_per_call": T("finds_per_call", None, note="tier-2 only (needs an adjudicated defect set)"),
+        "verbosity_shift": T("verbosity_shift", None, note="tier-2 only (needs a repo-access contrast)"),
     }
     return Profile(
         adapter_name, next((c.model_version for c in ok if c.model_version), None),
         f"review_convergence/{task_slug}", traits,
-        exploratory=True,          # 이 측정 계획에는 아직 사전등록이 없다
+        exploratory=True,          # no pre-registration for this plan yet
         tools_blockable=adapter.tools_blockable,
         total_calls=len(calls),
         total_cost_usd=round(sum(cost), 4) if cost else None,

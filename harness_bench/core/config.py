@@ -25,17 +25,18 @@ def _which(*names: str) -> Path | None:
     return None
 
 
-# Scratch must NOT live under /tmp.
+# Scratch must NOT live under a temporary directory.
 #
-# codex does not ship its sandbox helper; it MATERIALISES it under CODEX_HOME at run time and
-# refuses to do so under a temporary directory:
+# Some CLIs materialise sandbox helper binaries under their home directory at run time and
+# refuse to do so beneath /tmp:
 #
 #     WARNING: Refusing to create helper binaries under temporary dir "/tmp"
 #
-# It then proceeds anyway and dies on the first shell command with
-# `bwrap: execvp codex-linux-sandbox: No such file or directory`. The source study read that
-# as "codex cannot be given repo access" and recorded it as a MODEL property for three weeks.
-# It was a scratch-location property. See docs/METHODOLOGY.md.
+# The CLI then proceeds anyway and fails opaquely on its first shell command
+# (`execvp <helper>: No such file or directory`). From the outside this is indistinguishable
+# from "the model does not use the capability" -- a configuration property misreadable as a
+# model property. Refused up front instead. See docs/DESIGN.md 3, "environment before
+# attribution".
 DEFAULT_SCRATCH_ROOT = Path.home() / ".cache/harness-bench"
 
 

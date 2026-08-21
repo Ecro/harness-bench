@@ -1,91 +1,114 @@
 # harness-bench
 
-**LLM 하네스 설계를 모델에 걸쳐, 시간에 걸쳐 재현 가능하게 측정한다.**
+**Reproducible measurement of LLM harness design — across models, and over time.**
 
-새 모델이 나오면 한 번 돌려서 기존 모델과 같은 표에 얹고 — **그 모델을 어떻게 운용해야
-하는지 처방까지** 받는다.
+[한국어](README.ko.md)
+
+When a new model ships, one run puts it in the same table as the others — and produces the
+**operating prescription** for it, not just a score.
 
 ```
-                  측정된 특성                     →  결정되는 손잡이
- claude   말 아낌(-51%) · churn 안 마름 · 1.40/콜  →  팬아웃 · 상한 필수 · churn 게이트 금지
- codex    말 늚(+37%)  · 3R 에 마름   · 2.70/콜  →  단독 충분 · 게이트 사용 가능
+             measured                          →  decided
+ claude   grows code 1.258× · churn 0.688       →  cap the loop · no churn stop rule
+ codex    shrinks code 0.906× · ends early      →  loop may run longer · cap by rounds
 ```
 
-이건 **모델 순위표가 아니다.** *하네스 설계*의 효과를 잰다. → [`docs/LIMITS.md`](docs/LIMITS.md)
+> This is **not a model leaderboard.** It measures harness design, not model capability.
+> See [`docs/LIMITS.md`](docs/LIMITS.md).
+
+> ### 📊 **[review-convergence — full design, method and results →](docs/REVIEW-BENCH.md)**
+>
+> *Does repeated AI code review converge?* Two models, three loops each, contract-as-oracle.
+> Reviewers report **3–14 findings per pass on code that already passes all 23 acceptance
+> tests**, contract compliance holds in **every one of 54 loop rounds**, and the direction in
+> which the loop changes code size turns out to be a **model property** (1.258× vs 0.906×).
 
 ---
 
-## 어디서 왔는가
-
-한 실제 제품 코드베이스에서 400여 회의 LLM 호출로 11개 실험을 돌린 결과물이다.
-**그 과정에서 결론이 스무 번 뒤집혔고, 방향은 항상 덜 극적인 쪽이었다.** 상당수는
-코드가 아니라 **측정 조건**이 만든 것이었다 — 고장난 프로브, 스크래치 위치, 프롬프트 교란.
-
-그래서 이 레포의 1차 산출물은 도구가 아니라 **규율**이고, 도구는 규율이 잊히지 않게 하는
-장치다. → [`docs/METHODOLOGY.md`](docs/METHODOLOGY.md)
-
-## 규율이 코드로 강제된다
-
-```
-카나리      POS/NEG 레그가 없으면 Canary 생성 자체가 실패. require_pass 우회 불가
-재시도      call() 에 retry 파라미터가 없다. 테스트가 부재를 강제
-ARI 게이트   미달이면 숫자 대신 문자열 UNQUOTABLE 을 반환
-사전등록     반증 조건 없는 예측은 거부. freeze 후 편집은 해시 불일치로 탐지
-등급        근거 등급 없는 처방 규칙은 생성 거부 - 판단을 권고로 세탁하지 못하게
-스크래치     /tmp 아래면 거부 (codex 가 샌드박스 헬퍼를 거기 못 만든다)
-```
-
-## 구조
-
-```
-harness_bench/
-  core/          실험 무관. "어떻게 재는가" 를 알고 "무엇을 재는가" 는 모른다
-  experiments/
-    review_convergence/    첫 실험 - 코드리뷰가 반복하면 수렴하는가
-```
-
-**경계는 테스트로 강제된다** — `core` 는 `experiments` 를 import 할 수 없고, 도메인 어휘를
-코드에 담을 수 없다. 두 번째 실험이 들어올 때가 가장 바쁜 시점이라, 그때 리팩터링하면
-첫 실험의 재현성이 깨지기 때문이다.
-
-## 상태
-
-```
-[x] Phase 1   코어 6모듈 + 경계 테스트
-[x] Phase 1b  첫 실험 이식 + 재현 게이트 (원 연구 수치가 소수점까지 일치, LLM 콜 0)
-[x] Phase 2   bench CLI + 첫 원장 (claude · codex)
-[x] Phase 3   방법론 · 한계 · 과제 문서
-[x] Phase 4   CI 3잡(테스트 · 오라클 검증 · 시크릿 스캔) + 공개
-```
-
-## 지금까지 나온 것
-
-```bash
-bench canary --model claude          격리 양방향 확인. 실패하면 이후 명령 거부
-bench run    --model claude --loops 3
-bench compare                        원장 갱신
-bench prescribe --model claude       운용 처방 (근거 등급 병기)
-```
-
-첫 원장에서 이미 두 가지가 일어났다.
-
-**하나 — 카나리가 두 번 연속 실제 오진단을 막았다.** claude 는 기본 도구 차단이
-프로브 자신의 도구까지 막았고, codex 는 `-s read-only` 라 쓰기를 못 했다. 둘 다
-NEG 만 봤다면 "격리 성공" 으로 기록됐을 것이다.
-
-**둘 — 내가 원 연구와 같은 실수를 반대 방향으로 저질렀다.** 루프 하나에서 나온
-churn 방향을 반증이라 불렀고, 3루프로 재보니 원 연구가 맞았다. 세 비율이 문턱
-언저리(0.611~0.732)에 몰려 있어 루프 하나로는 어느 쪽이든 나온다.
-→ [`docs/KNOWN-DISCREPANCIES.md`](docs/KNOWN-DISCREPANCIES.md)
+## Quick start
 
 ```bash
 pip install -e ".[dev]"
-pytest -q                    # 경계 6 + 재현 4
+pytest -q                                  # boundary + reproduction gates, no model calls
+
+bench canary --model claude                # verify isolation in both directions first
+bench run    --model claude --loops 3
+bench compare                              # regenerate the ledger
+bench prescribe --model claude             # traits → operating prescription
 ```
 
-## 라이선스
+## What it produces
 
-- 코드 — **Apache-2.0** ([`LICENSE`](LICENSE))
-- 프롬프트·과제·데이터·결과 — **CC BY 4.0** ([`LICENSE-DATA`](LICENSE-DATA))
+Three artefacts per run: **raw** (every call, response, token count, timestamp),
+**profile** (the measured traits), and **prescription** (traits mapped to harness settings,
+each line carrying an evidence grade).
 
-경계는 [`NOTICE`](NOTICE) 에 있다.
+```
+## Operating prescription
+  [**]  round_cap     cap the rounds — churn does not converge
+  [***] loop_budget   keep the loop short; this model grows the code each round
+        ← loc_direction > 1.15
+
+  grades: *** reproduced across models · ** measured once · * judgement
+```
+
+An ungraded rule does not render.
+
+## Layout
+
+```
+harness_bench/
+  core/          knows HOW to measure, not WHAT   (sandbox · runner · cluster · prereg · stats · ledger)
+  experiments/
+    review_convergence/    does repeated AI code review converge?
+```
+
+`core` may not import `experiments`, and may not carry domain vocabulary in code — enforced
+by tests, so a second experiment cannot silently inherit the first one's assumptions.
+
+## Disciplines enforced in code
+
+Violations produce a refusal, not a warning.
+
+```
+two-way canary   a Canary without both POS and NEG legs raises at construction;
+                 require_pass() has no override
+no retry         call() has no retry parameter, and a test enforces its absence
+ARI gate         below threshold the result is the string UNQUOTABLE, not a number
+pre-registration a prediction without a falsification condition is rejected;
+                 an edited frozen file fails to load; unregistered runs are branded
+evidence grades  a prescription rule without a grade will not render
+environment      scratch under /tmp is refused; resolved model ids are recorded,
+                 not aliases; adapters declare whether tools can be disabled
+```
+
+Rationale for each: [`docs/DESIGN.md`](docs/DESIGN.md) §3.
+
+## Current results
+
+`review_convergence` / `retry_policy`, two models, three loops each — measured 2026-08-21.
+
+| model | calls | cost | loop_decay | churn | rejection | code size | tools blockable |
+|---|---|---|---|---|---|---|---|
+| claude-opus-5 | 30 | $15.74 | −1.25 | does not converge | 0.209 | **1.258×** | yes |
+| gpt-5.6-sol | 24 | n/a | −0.25 | not measurable | 0.273 | **0.906×** | **no** |
+
+Across 54 loop rounds, **contract compliance held in every single round** — while reviewers
+kept reporting 3–14 findings per pass on code that already passes all 23 acceptance tests.
+
+Full design and results: [`docs/REVIEW-BENCH.md`](docs/REVIEW-BENCH.md)
+
+## Documentation
+
+| | |
+|---|---|
+| [`docs/DESIGN.md`](docs/DESIGN.md) | harness-bench architecture and the six disciplines |
+| [`docs/REVIEW-BENCH.md`](docs/REVIEW-BENCH.md) | the review experiment: design, tasks, results |
+| [`docs/LIMITS.md`](docs/LIMITS.md) | what this benchmark does not support |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | adding a model, adding an experiment |
+
+## License
+
+Code — **Apache-2.0** ([`LICENSE`](LICENSE)).
+Prompts, tasks, data, results — **CC BY 4.0** ([`LICENSE-DATA`](LICENSE-DATA)).
+Boundaries in [`NOTICE`](NOTICE).

@@ -12,13 +12,13 @@ So every isolation claim needs BOTH directions in the SAME invocation:
 If POS fails, that is not isolation working. That is the probe being broken, and any result
 collected under it is void.
 
-In the source study this caught a real one: codex returned NOT-READABLE for both, which
-without the POS control would have been recorded as "codex does not use repo access even
-when given it" -- a MODEL property. It was a scratch-directory property. The same class of
-mistake was made three times; each time only the POS leg distinguished them.
+A probe that returns "not reachable" for BOTH targets looks identical to perfect isolation
+until the POS leg is read: the difference between "the model did not use the capability" and
+"the capability was never attached" is invisible from the outside, and only the POS leg
+separates them.
 
-Therefore: `require_pass()` raises. A driver cannot proceed on a failed canary, and there
-is no flag to override it.
+Therefore: `require_pass()` raises. A driver cannot proceed on a failed canary, and there is
+no flag to override it.
 """
 from __future__ import annotations
 
@@ -46,9 +46,9 @@ class Leg:
 class Canary:
     prompt: str
     legs: list[Leg]
-    # 프로브는 프로브할 도구가 있어야 한다. 기본 차단(allow_tools=set())을 그대로 쓰면
-    # 모델은 아무것도 시도하지 못하고 전부 "실패" 를 반환하며, 그것은 격리의 증거가
-    # 아니라 정확히 이 클래스가 존재하는 이유인 '고장난 프로브' 다.
+    # A probe needs tools to probe with. Left at the default deny-all, the model attempts
+    # nothing and reports failure for everything -- which is not evidence of isolation but
+    # exactly the broken probe this class exists to catch.
     needs_tools: set[str] = field(default_factory=lambda: {"Read", "Write", "Bash"})
     result: CallResult | None = field(default=None, init=False)
     verdicts: dict[str, bool] = field(default_factory=dict, init=False)
@@ -64,7 +64,7 @@ class Canary:
     def run(self, adapter, scratch: Path, **kw) -> "Canary":
         kw.setdefault("allow_tools", self.needs_tools)
         self.result = call(adapter, "canary", self.prompt, scratch, **kw)
-        # 원본을 항상 남긴다. 실패한 카나리야말로 보존해야 할 증거다.
+        # Always persist the raw response: a failed canary is the evidence.
         save(self.result, scratch, "canary")
         parsed = self.result.parsed or {}
         self.verdicts = {l.name: bool(l.check(parsed)) for l in self.legs}

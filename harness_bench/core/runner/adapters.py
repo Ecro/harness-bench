@@ -12,8 +12,8 @@ THE CONTRACT — five things, and a new model must satisfy all five or be marked
   5. tool policy   declare whether tools CAN be disabled. codex cannot.
 
 `tools_blockable = False` is not a footnote. Putting a model that cannot be muzzled in the
-same table as one that can is the single largest open problem in this benchmark, and the
-source study mis-attributed it to model behaviour three separate times. Adapters that
+same table as one that can is the single largest open problem in this benchmark: filesystem
+isolation still holds through the namespace, but capability symmetry does not. Adapters that
 cannot block tools are recorded as such and their rows carry the flag.
 """
 from __future__ import annotations
@@ -76,10 +76,11 @@ class ClaudeAdapter(Adapter):
             if e.get("type") == "result":
                 u = e.get("usage") or {}
                 mu = e.get("modelUsage") or {}
-                # modelUsage 에는 보조 모델이 함께 들어온다 (관측: haiku 가 23 토큰짜리
-                # 부수 작업으로 섞였고, 사전순으로 앞이라 첫 키를 집으면 그게 잡힌다).
-                # 주 모델은 **출력 토큰이 가장 많은 것**이다. 해석된 모델 id 는 재현성의
-                # 근거이므로 여기서 틀리면 원장 전체가 잘못된 모델을 가리킨다.
+                # modelUsage can carry auxiliary models alongside the main one (a small
+                # helper model doing a few tokens of side work), and taking the first key
+                # picks whichever sorts first. The main model is the one with the most
+                # OUTPUT tokens. The resolved id is the basis of reproducibility: get it
+                # wrong here and the whole ledger names the wrong model.
                 main = max(mu, key=lambda k: (mu[k] or {}).get("outputTokens", 0), default=None)
                 return (
                     e.get("result") or "",

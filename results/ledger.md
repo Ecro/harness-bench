@@ -1,7 +1,7 @@
 # ledger
 
-이 표는 **모델 순위표가 아니다.** 하네스 설계의 효과를 재는 특성값이다.
-`docs/LIMITS.md` 를 같이 읽어라.
+**This is not a model leaderboard.** These are trait values measuring the effect of harness design.
+Read it with `docs/LIMITS.md`.
 
 | model | version | when | calls | cost | spread | loop_decay | churn_dries | churn_ratio | rejection_rate | malformed_rate | ac_held | loc_direction | tools_blockable |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
@@ -10,9 +10,9 @@
 | codex | gpt-5.6-sol | 2026-08-21 | 8 | — | 2 | -4.0 | — | — | 0.0 | 0.0 | True | 1.016 | False |
 | codex | gpt-5.6-sol | 2026-08-21 | 24 | — | — | -0.25 | — | 0.394 | 0.273 | 0.0 | True | 0.906 | False |
 
-## 단서
-- `claude` — EXPLORATORY: 예측을 사전 동결하지 않은 측정
-- `claude` — superseded by 3-loop run (D-001). 삭제하지 않는다: n=1 루프. churn_dries=True 는 이 실행의 ratio 0.617 에서 나왔는데, 3루프 재측정 결과 세 값이 0.611~0.732 로 문턱 0.7 언저리에 몰려 있고 판정은 False(1:2)다. 이 행은 표본을 방향으로 착각한 사례로 보존한다.
-- `codex` — EXPLORATORY: 예측을 사전 동결하지 않은 측정
-- `codex` — 도구를 끌 수 없는 어댑터. 차단 가능한 모델과 같은 표에 놓는 것 자체가 교란이다 (LIMITS §4)
-- `codex` — 비용 미상 (0 이 아니다)
+## Caveats
+- `claude` -- EXPLORATORY: predictions not frozen before the run
+- `claude` -- superseded by 3-loop run. Kept, not deleted: Single loop (n=1). churn_dries=True came from this run's ratio 0.617; the three-loop re-measurement gave 0.611 / 0.732 / 0.720 -- clustered around the 0.7 threshold, verdict False (split 1:2). Kept because the distribution is the finding: one loop lands on either side of the boundary by chance.
+- `codex` -- EXPLORATORY: predictions not frozen before the run
+- `codex` -- cost unknown (not zero)
+- `codex` -- tools cannot be disabled for this adapter; sharing a table with one that can is itself a confound (LIMITS 4)

@@ -1,19 +1,17 @@
 """Pre-registration. Freeze predictions BEFORE data, or wear the exploratory brand.
 
-In the source study this was not ceremony. Predictions were frozen five times and TWO of
-them failed -- and both failures were more informative than the successes:
+A prediction is only informative if it could have come out the other way, and only if that
+was settled before the data arrived. Post-hoc, any observed direction acquires a reason it
+was expected all along; that is what unregistered analysis produces.
 
-  P5  "fan-out wins at equal budget too"      -> 43% vs 50%. The recall gain was BUDGET,
-                                                 not structure.
-  P1  "scope-only lands between the two arms" -> it landed ABOVE both. Being told a surface
-                                                 is fixed with no document to check against
-                                                 makes a fixer reject everything ambiguous.
+Two consequences are enforced here rather than requested:
 
-Neither would have survived post-hoc narration. The author would have found a reason why the
-observed direction was expected all along -- that is what unregistered analysis does.
+  * a prediction with no falsification condition is a description, and is rejected at
+    construction;
+  * a frozen file is hashed, so editing it after the fact fails to load.
 
-So: a run without a prereg is not forbidden, it is BRANDED. `exploratory: true` travels in
-the result and into the ledger, and no amount of downstream formatting removes it.
+A run without a prereg is not forbidden, it is BRANDED. `exploratory: true` travels in the
+result and into the ledger, and no amount of downstream formatting removes it.
 """
 from __future__ import annotations
 

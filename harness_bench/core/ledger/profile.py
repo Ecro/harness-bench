@@ -2,20 +2,17 @@
 
 A score tells you which model won. A PROFILE tells you how to run the one you have.
 
-The source study's most useful output was never a number, it was a pair of operating
-recipes that fell straight out of measured traits:
-
-    claude   terse under repo access (-51%) · churn never dries · 1.40 real finds/call
-             -> needs fan-out · round cap mandatory · churn gate unusable
-    codex    verbose under repo access (+37%) · dry by round 3 · 2.70 real finds/call
-             -> single pass suffices · cap less critical · churn gate works
+The most useful output is not a number but an operating recipe that falls out of measured
+traits -- one model that grows code every round and never converges needs a hard round cap
+and cannot use a churn stop rule, while one that shrinks code and settles early can run
+longer.
 
 Core owns the SCHEMA and the RENDERER. The trait->knob rules are owned by the experiment,
 because the mapping is domain knowledge and the next experiment will bring different knobs.
 
-EVIDENCE GRADES ARE MANDATORY. Some of those mappings are the study's judgement, not its
-measurement, and a prescription that hides the difference is worse than no prescription --
-it launders an opinion into a recommendation. A rule with no grade does not render.
+EVIDENCE GRADES ARE MANDATORY. Some mappings are judgement rather than measurement, and a
+prescription that hides the difference is worse than no prescription -- it launders an
+opinion into a recommendation. A rule with no grade does not render.
 """
 from __future__ import annotations
 
@@ -24,9 +21,9 @@ from datetime import datetime, timezone
 from typing import Callable
 
 GRADES = {
-    "***": "두 모델 이상에서 재현",
-    "**": "단일 모델/단일 실험에서 측정",
-    "*": "판단 — 측정되지 않음",
+    "***": "reproduced across models",
+    "**": "measured once",
+    "*": "judgement, not measured",
 }
 
 
@@ -80,12 +77,12 @@ class Profile:
     def caveats(self) -> list[str]:
         out = []
         if self.exploratory:
-            out.append("EXPLORATORY — 예측을 사전 동결하지 않았다")
+            out.append("EXPLORATORY -- predictions were not frozen before the run")
         if self.tools_blockable is False:
-            out.append("TOOLS-UNBLOCKABLE — 이 어댑터는 도구를 끌 수 없다. "
-                       "차단 가능한 모델과 같은 표에 놓는 것 자체가 교란이다")
+            out.append("TOOLS-UNBLOCKABLE -- this adapter cannot disable tools; placing it "
+                       "in the same table as one that can is itself a confound")
         if self.total_cost_usd is None:
-            out.append("COST-UNKNOWN — 비용을 못 얻었다 (0 이 아니라 미상)")
+            out.append("COST-UNKNOWN -- usage was not reported (unknown, not zero)")
         out += [f"DEGRADED:{k}" for k, t in self.traits.items() if t.degraded]
         return out
 
@@ -108,19 +105,19 @@ class Profile:
                  + (f"   cost: ${self.total_cost_usd:.2f}" if self.total_cost_usd else "")]
         if self.caveats:
             lines += [""] + [f"  ⚠ {c}" for c in self.caveats]
-        lines += ["", "## 측정된 특성"]
+        lines += ["", "## Measured traits"]
         for k, t in self.traits.items():
             lines.append(f"  {k:<28} {t.value}{(' ' + t.unit) if t.unit else ''}"
                          + (f"   {t.note}" if t.note else ""))
         pres = self.prescribe(rules)
-        lines += ["", "## 운용 처방"]
+        lines += ["", "## Operating prescription"]
         if not pres:
-            lines.append("  (해당 없음 — 측정된 특성이 어떤 규칙도 발화시키지 않았다)")
+            lines.append("  (none -- no measured trait fired a rule)")
         for p in pres:
             lines.append(f"  [{p['grade']:<3}] {p['knob']:<24} {p['do']}")
             if p["because"]:
                 lines.append(f"        ← {p['because']}")
-        lines += ["", "  근거 등급: " + " · ".join(f"{g} {d}" for g, d in GRADES.items())]
+        lines += ["", "  grades: " + " | ".join(f"{g} {d}" for g, d in GRADES.items())]
         return "\n".join(lines)
 
     def to_dict(self) -> dict:

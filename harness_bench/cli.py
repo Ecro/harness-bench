@@ -1,4 +1,4 @@
-"""bench — 카나리, 측정, 원장, 처방."""
+"""bench -- canary, measure, ledger, prescribe."""
 from __future__ import annotations
 
 import argparse
@@ -31,9 +31,9 @@ def cmd_canary(a) -> int:
                     if a.model == "claude" else [])
     print(c.report())
     if not c.passed:
-        print("\n판정: ★중단★  — POS 실패는 격리 성공이 아니라 프로브 고장이다")
+        print("\nVERDICT: STOP -- a failed POS leg is a broken probe, not isolation.\n        Data collected in this state is void.")
         return 1
-    print("\n판정: 진행 가능")
+    print("\nVERDICT: clear to proceed")
     return 0
 
 

@@ -1,9 +1,9 @@
 """Run a frozen acceptance suite against a candidate module, and VERIFY THE ORACLE ITSELF.
 
-The source study's first experiment collapsed because it adopted an oracle without ever
-asking what that oracle guaranteed. Tests went red, "red" was translated to "a bug was
-introduced", and the headline result -- four independent runs breaking the same four tests --
-turned out to be four tests pinning a state production cannot reach. The code was fine.
+An oracle is only as good as what it demonstrably guarantees. "Tests went red" translates to
+"a defect was introduced" only if the suite is known to fail for the right reasons -- a suite
+can just as easily pin a state production cannot reach, in which case red means the test was
+wrong, not the code.
 
 So this module ships `verify()` alongside `run()`, and no experiment should quote a number
 until verify() has passed:
@@ -91,6 +91,6 @@ def verify(task, log=print) -> bool:
             rm = run(mutated, task.suite, task.module_name)
             caught = not rm.green
             log(f"  single-removal detected   {rm.passed}/{rm.total} "
-                f"{'PASS' if caught else 'FAIL — 스위트가 못 잡는다'}")
+                f"{'PASS' if caught else 'FAIL -- the suite does not catch it'}")
             ok &= caught
     return bool(ok)

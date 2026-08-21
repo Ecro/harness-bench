@@ -3,13 +3,10 @@
 When you hold N independent runs, "how much would k calls have found?" is not an estimate.
 It is the mean over all C(N,k) subsets, and it is free: the runs are already paid for.
 
-This is what turned "two models are better than one" from a judgement into a number in the
-source study. Each model found 4 of 10 real defects at 10 calls, but their union was 5 --
-and at small budgets a MIXED pool beat either model alone at every k >= 2:
-
-    k=3  claude 2 + codex 1 -> 3.57      claude alone at k=6 -> 3.43
-
-Three mixed calls beat six same-model calls. Nothing new was run to learn that.
+This turns "two models are better than one" from a judgement into a number. Two arms may
+each find 4 of 10 targets at full budget while their union finds 5, and at small budgets a
+MIXED pool can beat either arm alone at every k >= 2 -- three mixed calls outscoring six
+same-arm calls. All of it computed from runs already paid for.
 """
 from __future__ import annotations
 

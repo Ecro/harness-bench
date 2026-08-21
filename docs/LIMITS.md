@@ -1,96 +1,80 @@
-# 한계 — 이 벤치로 주장하면 안 되는 것
+# Limits — what this benchmark does not support
 
-먼저 가장 중요한 것부터.
-
-> **이것은 모델 순위표가 아니다.** 이 벤치는 *하네스 설계의 효과*를 잰다.
-> "어느 모델이 더 똑똑한가" 가 아니라 **"이 모델을 어떻게 운용해야 하는가"** 다.
-> 순위표로 인용되면 오독이다.
+**This is not a model leaderboard.** It measures the effect of *harness design*: not
+"which model is smarter" but "how should this model be operated". Cited as a ranking, it is
+misread.
 
 ---
 
-## 1. 근거 등급을 지우지 마라
+## 1. Evidence grades are part of the result
 
-이 연구에서 **두 번 이상 재현된 문장은 셋뿐이다.**
-
-```
-***  리뷰 반복과 수정 루프는 다른 일이다              세 조건에서 재현
-***  한 파일만 주면 가장 자신 있는 지적이 가장 위험하다   두 모델에서 재현
-***  준수율은 어떤 팔도 구별하지 못한다                47라운드 10팔 전부 동일
-```
-
-**나머지는 한 번씩 본 것이다.** 처방 렌더러가 `***/**/*` 를 항상 병기하는 이유이고,
-등급 없는 규칙은 아예 렌더되지 않는 이유다.
-
-## 2. 판정자 문제 — 이 벤치가 tier-1 만 쓰는 이유
-
-원 연구의 정밀도·재현율은 **저자 본인이 판정한 64건**(대조군 14 · 주석프로브 11 ·
-팬아웃 39)에 의존한다. 설계자와 판정자가 같은 사람이고, 판정 기준도 같은 사람이 정했다.
-
-**tier-1 과제에는 이 문제가 구조적으로 없다** — 계약이 오라클이라 사람이 개입할 자리가
-없다. 그래서 모델 비교의 근거는 tier-1 뿐이다. tier-2(케이스 스터디)의 숫자는
-*"우리가 이렇게 봤다"* 이지 *"당신도 같은 숫자를 얻을 것"* 이 아니다.
-
-## 3. 재현율의 분모는 "존재하는" 결함이 아니다
-
-**"내가 아는" 결함이다.** 아무도 못 찾은 결함은 분자에도 분모에도 안 들어간다.
-
-원 연구에서 이 분모는 **10 → 13 → 14 로 계속 늘었다.** 새 조건이 새 결함을 찾을 때마다
-늘어난다. 따라서 **모든 커버리지·재현율 수치는 낙관 쪽으로 치우쳐 있다.**
-
-## 4. 도구를 못 막는 모델 — 최대 미해결
-
-codex 에는 도구를 끄는 플래그가 없다. `-s read-only` 는 읽기를 **허용**하는 셸 정책이지
-도구 스위치가 아니다. 그래서:
-
-> **도구를 막을 수 있는 모델과 없는 모델을 같은 표에 놓는 것 자체가 교란이다.**
-
-지금은 `tools_blockable=False` 로 **선언만** 하고 그 행에 낙인을 찍는다. 해결한 게 아니다.
-격리는 bwrap 네임스페이스가 붙들지만, *능력이 대칭인가* 는 다른 질문이고 답이 없다.
-
-## 5. 과제 둘, 언어 하나
-
-tier-1 은 Python 두 과제다. 여기서 나온 것이 다른 언어·다른 도메인으로 옮겨간다는 근거는
-없다. 실제로 **한 결과가 대상을 옮기자 뒤집혔다** — 팬아웃은 Python 에서 동일 예산에
-고유 발견 +52% 였는데 C 펌웨어에서는 이득이 없었다(렌즈가 서로 겹쳐서).
-
-## 6. n 이 작다
-
-대부분의 결과가 루프 1~3개, 셀당 3개다. 합성 조건(처방 전체)은 **실질 1.25 루프**다.
-극적인 대비는 n 을 늘리면 거의 항상 줄어든다 — 원 연구에서 실제로 그랬다.
+Only three statements in this line of work have been reproduced more than once:
 
 ```
-"각각은 효과 0, 둘 다일 때만"  (n=1) →  "각각 −4 정도, 둘 다면 −13"  (n=3)
+***  repeated review and the fix loop are different activities
+***  in a single-file scope, the most-confidently-reported finding is the most suspect
+***  contract compliance discriminates nothing — every arm holds it
 ```
 
-## 7. 사람 선별을 뺀 결과는 하한이다
+Everything else has been observed once. This is why every prescription line carries a grade,
+and why an ungraded rule does not render at all.
 
-처방의 한 단계는 *"사람이 훑는다 — 자동화하지 않는다"* 이다. 자동 실행은 그걸 뺀다.
-따라서 자동으로 나온 수치는 **처방의 상한이 아니라 하한**이다.
+## 2. Tier-1 only, for model comparison
 
-## 8. 비용은 이제야 제대로 잰다
+Model comparison rests on tier-1 tasks, where the contract is the oracle and no human
+adjudicates. Tier-2 case studies carry human judgement about what is a real defect; they are
+recorded as *"this is what we saw"*, not *"you will get the same numbers"*.
 
-원 연구는 **토큰을 기록하지 않았다.** 콜 수·벽시계·응답 바이트가 대리변수였는데,
-입력(코드 + 누적 지적)이 라운드마다 커지므로 **실제 비용은 그보다 가파르게 오른다.**
+## 3. Recall denominators are optimistic
 
-이 레포는 토큰과 비용을 기록하고, 못 얻으면 0 이 아니라 `COST-UNKNOWN` 으로 낙인찍는다.
-**그러나 원 연구에서 온 픽스처에는 그 값이 없다.** 재현 게이트가 검증하는 수치에
-비용 축은 포함되지 않는다.
+A recall denominator is the set of defects **known**, not the set that exists. Anything nobody
+has found appears in neither numerator nor denominator, and the denominator grows every time a
+new condition finds something new. All coverage figures are therefore biased upward.
 
-## 9. 실행 시점이 결과의 일부다
+## 4. Models that cannot be muzzled
 
-모델은 예고 없이 바뀐다. 별칭(`opus`)은 배치 도중 다른 백엔드로 재지정될 수 있다.
-그래서 결과에 **해석된 모델 ID** 와 프롬프트 SHA 를 박는다. 그럼에도:
+Some CLIs have no flag to disable tools; a read-only sandbox policy permits reads, it does not
+remove the capability.
 
-> 6개월 전 수치와 오늘 수치의 차이가 **모델 변화인지 조건 변화인지**를
-> 결과 파일만으로 항상 가를 수는 없다. 재현 불가가 된 행은 삭제하지 않고
-> `stale` 로 표시한다.
+> Placing a model whose tools can be disabled and one whose tools cannot in the same table is
+> itself a confound.
+
+The current handling is to **declare** it (`tools_blockable: false`) and brand that row.
+That is disclosure, not a solution. Filesystem isolation still holds via the namespace;
+capability symmetry does not.
+
+## 5. Two tasks, one language
+
+Tier-1 is two Python tasks. There is no basis for transferring these results to another
+language or domain — and at least one result has already reversed on a different target
+(category fan-out gained 52% unique findings at equal budget on Python, and gained nothing on
+C firmware, where the lenses overlapped).
+
+## 6. Small n
+
+Most results rest on three loops. Sharp contrasts shrink as n grows; a trait whose ratios
+cluster near its threshold needs at least three loops before it is judged at all, and the
+framework refuses to judge below that.
+
+## 7. Automated runs measure the lower bound
+
+One step of the recommended process is *"a human triages the findings"*, which an automated
+run omits. Numbers produced without it are a floor, not a ceiling.
+
+## 8. Timing is part of the result
+
+Models change without notice, and an alias can be repointed mid-batch. Results record the
+**resolved** model id and the prompt SHA-256. Even so, the difference between a figure from
+six months ago and today cannot always be attributed to model change versus condition change
+from the result file alone. Rows that can no longer be reproduced are marked `stale`, never
+deleted.
 
 ---
 
-## 이 벤치가 답하지 않는 질문들
+## Questions this benchmark does not answer
 
-- 설계가 옳은가 · 의도를 드러내는가 · 이름이 정확한가
-  — 정전(正典)이 코드리뷰에서 1순위로 놓는 것들이고, 여기서 **하나도 측정되지 않는다.**
-  Cognitive Complexity 는 이해 가능성의 *검증된 대리변수*이지 이해 가능성 자체가 아니다.
-- 어느 모델이 더 나은 프로그래머인가.
-- 이 결과가 당신의 코드베이스에도 성립하는가.
+- Whether a design is right, whether it reveals intent, whether names are accurate — the
+  things canonical code review puts first are **not measured here at all**. Cognitive
+  Complexity is a validated proxy for comprehension effort, not comprehension itself.
+- Which model is the better programmer.
+- Whether any of this holds on your codebase.

@@ -1,10 +1,9 @@
 """CallResult — what one isolated model invocation produced, including its cost.
 
-The source study did not record tokens. Its cost axis was call count, wall-clock and
-response bytes, all of which understate the truth: the INPUT (subject + accumulated
-findings) grows every round, so real spend rises faster than any of those proxies show.
-Cost-vs-quality is the whole point of this benchmark, so a missing usage record is a
-DEGRADED result, never a silent zero.
+Call count, wall-clock and response bytes all understate cost: the INPUT (subject plus
+accumulated findings) grows every round, so real spend rises faster than any of those
+proxies show. Cost-vs-quality is the whole point of this benchmark, so a missing usage
+record is a DEGRADED result, never a silent zero.
 """
 from __future__ import annotations
 

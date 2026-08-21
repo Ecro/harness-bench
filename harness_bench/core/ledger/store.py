@@ -1,8 +1,9 @@
-"""결과 원장. 모델 × 특성 표를 시간에 걸쳐 축적한다.
+"""Result ledger: a model-by-trait table accumulated over time.
 
-재현 불가가 된 행은 **삭제하지 않고** `stale` 로 표시한다. 모델은 예고 없이 바뀌고,
-6개월 전 수치와 오늘 수치의 차이가 모델 변화인지 조건 변화인지 결과 파일만으로 항상
-가를 수는 없다. 지우면 그 차이 자체를 잃는다.
+Rows that can no longer be reproduced are marked `stale`, never deleted. Models change
+without notice, and the difference between a figure from six months ago and today cannot
+always be attributed to model change versus condition change from the result file alone.
+Deleting the row deletes the difference itself.
 """
 from __future__ import annotations
 
@@ -28,13 +29,13 @@ def load_all(results_dir: Path) -> list[dict]:
 
 def render_ledger(rows: list[dict], trait_keys: dict) -> str:
     if not rows:
-        return "# ledger\n\n(아직 결과 없음)\n"
+        return "# ledger\n\n(no results yet)\n"
     keys = [k for k in trait_keys if any(r["traits"].get(k, {}).get("value") is not None
                                          for r in rows)]
     head = ["model", "version", "when", "calls", "cost"] + keys
     out = ["# ledger", "",
-           "이 표는 **모델 순위표가 아니다.** 하네스 설계의 효과를 재는 특성값이다.",
-           "`docs/LIMITS.md` 를 같이 읽어라.", "",
+           "**This is not a model leaderboard.** These are trait values measuring the "
+           "effect of harness design.", "Read it with `docs/LIMITS.md`.", "",
            "| " + " | ".join(head) + " |",
            "|" + "|".join(["---"] * len(head)) + "|"]
     for r in sorted(rows, key=lambda r: (r["model"], r["created_at"])):
@@ -48,20 +49,20 @@ def render_ledger(rows: list[dict], trait_keys: dict) -> str:
         out.append("| " + " | ".join(cells) + " |")
     notes = {c for r in rows for c in _caveats(r)}
     if notes:
-        out += ["", "## 단서"] + [f"- {n}" for n in sorted(notes)]
+        out += ["", "## Caveats"] + [f"- {n}" for n in sorted(notes)]
     return "\n".join(out) + "\n"
 
 
 def _caveats(r: dict) -> list[str]:
     out = []
     if r.get("superseded_by"):
-        out.append(f"`{r['model']}` — superseded by {r['superseded_by']}. "
-                   f"삭제하지 않는다: {r.get('note', '')}")
+        out.append(f"`{r['model']}` -- superseded by {r['superseded_by']}. "
+                   f"Kept, not deleted: {r.get('note', '')}")
     if r.get("exploratory"):
-        out.append(f"`{r['model']}` — EXPLORATORY: 예측을 사전 동결하지 않은 측정")
+        out.append(f"`{r['model']}` -- EXPLORATORY: predictions not frozen before the run")
     if r.get("tools_blockable") is False:
-        out.append(f"`{r['model']}` — 도구를 끌 수 없는 어댑터. 차단 가능한 모델과 "
-                   "같은 표에 놓는 것 자체가 교란이다 (LIMITS §4)")
+        out.append(f"`{r['model']}` -- tools cannot be disabled for this adapter; sharing a "
+                   "table with one that can is itself a confound (LIMITS 4)")
     if r.get("total_cost_usd") is None:
-        out.append(f"`{r['model']}` — 비용 미상 (0 이 아니다)")
+        out.append(f"`{r['model']}` -- cost unknown (not zero)")
     return out
