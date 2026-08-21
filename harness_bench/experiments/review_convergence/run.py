@@ -96,7 +96,7 @@ def measure(adapter_name: str, task_slug: str = "retry_policy", *,
         raise ValueError(f"{task_slug} ships no reference; spread needs a known-good v0")
     if not oracle.verify(task, log=lambda m: log("  " + m.strip())):
         raise RuntimeError(f"oracle for {task_slug} failed verification — no number from it "
-                           "is quotable (docs/TASKS.md)")
+                           "is quotable (docs/review-convergence/README.md)")
 
     adapter = REGISTRY[adapter_name]()
     spec, v0 = task.spec.read_text(), task.reference.read_text()

@@ -29,7 +29,7 @@ harness-bench 는 **실험 모음**이다. `core` 가 측정 기계 — 샌드�
 
 | # | 실험 | 묻는 질문 | 상태 |
 |---|---|---|---|
-| **1** | [`review_convergence`](harness_bench/experiments/review_convergence) | AI 코드리뷰를 반복하면 수렴하는가? | **공개됨** — [결과](docs/REVIEW-BENCH.ko.md) |
+| **1** | [`review_convergence`](harness_bench/experiments/review_convergence) | AI 코드리뷰를 반복하면 수렴하는가? | **공개됨** — [결과](docs/review-convergence/README.ko.md) |
 | 2… | — | — | 아직 없음 |
 
 아래 실험 절을 제외한 나머지는 모두 모음 전체에 해당한다 — 어떤 실험을 돌리든 같은 명령,
@@ -52,11 +52,11 @@ harness-bench 는 **실험 모음**이다. `core` 가 측정 기계 — 샌드�
 
 | | |
 |---|---|
-| **[발견 →](docs/FINDINGS.ko.md)** | 측정된 전부, 숫자와 함께 |
-| **[그래서 리뷰를 어떻게 →](docs/PRESCRIPTION.ko.md)** | 측정이 뒷받침하는 레시피 |
-| **[어떻게 측정했는가 →](docs/METHODS.ko.md)** | 계측기 전부와 각각의 검증 |
-| [실험 1 전문 →](docs/REVIEW-BENCH.ko.md) | 설계·과제·재현 가능한 tier-1 실행 |
-| [장문 서사 →](docs/STUDY-ko.md) | 연구 전체를 한 흐름으로 |
+| **[발견 →](docs/review-convergence/FINDINGS.ko.md)** | 측정된 전부, 숫자와 함께 |
+| **[그래서 리뷰를 어떻게 →](docs/review-convergence/PRESCRIPTION.ko.md)** | 측정이 뒷받침하는 레시피 |
+| **[어떻게 측정했는가 →](docs/review-convergence/METHODS.ko.md)** | 계측기 전부와 각각의 검증 |
+| [실험 1 전문 →](docs/review-convergence/README.ko.md) | 설계·과제·재현 가능한 tier-1 실행 |
+| [장문 서사 →](docs/review-convergence/STUDY-ko.md) | 연구 전체를 한 흐름으로 |
 
 과제 `retry_policy`, 두 모델, 각 3루프 — 2026-08-21 측정:
 
@@ -116,6 +116,12 @@ harness_bench/
   experiments/
     review_convergence/    실험 1 — AI 코드리뷰를 반복하면 수렴하는가
     <다음>/                 두 번째 실험이 자기 bench-<name> 스킬과 함께 여기 들어온다
+docs/
+  DESIGN.ko.md · LIMITS.ko.md    모음 전체 — 어떻게 재는가, 무엇을 주장할 수 없는가
+  review-convergence/            실험 1 의 문서 — 결과·방법·처방
+  <다음>/                         두 번째 실험의 문서는 그 옆에 들어온다. 섞이지 않는다
+results/
+  ledger-<실험>.md                원장은 실험마다 하나
 ```
 
 `core` 는 `experiments` 를 import 할 수 없고 도메인 어휘를 코드에 담을 수 없다. 테스트로
@@ -151,6 +157,8 @@ traits.TRAIT_KEYS / traits.RULES            무엇을 재고, 그것이 무엇�
 ```
 
 여기에 동결된 과제·프롬프트·오라클·사전등록과 자기 `bench-<name>` 스킬을 함께 가져온다.
+문서는 `docs/<실험>/` 아래에 둔다 — 모음 전체를 다루는 `docs/` 최상위에 두지 않는다. 거기 두면
+두 번째 실험의 결과가 모음 전체의 결과처럼 읽힌다.
 [`CONTRIBUTING.ko.md`](CONTRIBUTING.ko.md) 참조.
 
 ## 문서
@@ -160,7 +168,6 @@ traits.TRAIT_KEYS / traits.RULES            무엇을 재고, 그것이 무엇�
 | | |
 |---|---|
 | [`docs/DESIGN.ko.md`](docs/DESIGN.ko.md) | 구조와 여섯 규율 |
-| [`docs/METHODS.ko.md`](docs/METHODS.ko.md) | 각 숫자를 어떻게 얻었고 계측기를 어떻게 검증했는가 |
 | [`docs/LIMITS.ko.md`](docs/LIMITS.ko.md) | 이 벤치로 주장할 수 없는 것 |
 | [`CONTRIBUTING.ko.md`](CONTRIBUTING.ko.md) | 모델 추가, 실험 추가 |
 
@@ -168,10 +175,11 @@ traits.TRAIT_KEYS / traits.RULES            무엇을 재고, 그것이 무엇�
 
 | | |
 |---|---|
-| [`docs/REVIEW-BENCH.ko.md`](docs/REVIEW-BENCH.ko.md) | 실험 전문: 설계·과제·결과 |
-| [`docs/FINDINGS.ko.md`](docs/FINDINGS.ko.md) | 측정된 전부, 숫자와 함께 |
-| [`docs/PRESCRIPTION.ko.md`](docs/PRESCRIPTION.ko.md) | 측정이 뒷받침하는 리뷰 레시피 |
-| [`docs/STUDY-ko.md`](docs/STUDY-ko.md) | 장문 서사 — 실험과 정정의 전체 기록 |
+| [`docs/review-convergence/README.ko.md`](docs/review-convergence/README.ko.md) | 실험 전문: 설계·과제·결과 |
+| [`docs/review-convergence/METHODS.ko.md`](docs/review-convergence/METHODS.ko.md) | 각 숫자를 어떻게 얻었고 계측기를 어떻게 검증했는가 |
+| [`docs/review-convergence/FINDINGS.ko.md`](docs/review-convergence/FINDINGS.ko.md) | 측정된 전부, 숫자와 함께 |
+| [`docs/review-convergence/PRESCRIPTION.ko.md`](docs/review-convergence/PRESCRIPTION.ko.md) | 측정이 뒷받침하는 리뷰 레시피 |
+| [`docs/review-convergence/STUDY-ko.md`](docs/review-convergence/STUDY-ko.md) | 장문 서사 — 실험과 정정의 전체 기록 |
 
 ## 라이선스
 

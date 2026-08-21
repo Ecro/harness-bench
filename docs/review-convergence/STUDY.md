@@ -6,7 +6,7 @@
 > `harness-bench`, told as one narrative.
 > For the numbers alone see [`FINDINGS.md`](FINDINGS.md); for the procedure alone see
 > [`PRESCRIPTION.md`](PRESCRIPTION.md); for the reproducible benchmark results see
-> [`REVIEW-BENCH.md`](REVIEW-BENCH.md).
+> [`README.md`](README.md).
 >
 > Raw data, tools and experiment logs: <https://github.com/Ecro/spoton> `work-docs/`, `tools/`
 >

@@ -49,6 +49,9 @@ traits.TRAIT_KEYS / traits.RULES            무엇을 재고, 그것이 무엇�
 결과에는 `"<실험>/<과제>"` 가 기록되므로, 원장(`results/ledger-<실험>.md`)과 모든 처방은
 한 실험의 특성 어휘 안에 머문다.
 
+문서는 `docs/<실험>/` 에 둔다 — 발견·방법·처방·장문 서사, 그리고 그 실험의 첫 페이지가 될
+`README.md`. `docs/` 최상위에는 모음 전체에 해당하는 `DESIGN` 과 `LIMITS` 만 남는다.
+
 `core` 를 고쳐야 한다면, 코어가 부족한 것인지 경계를 넘으려는 것인지 먼저 물어라. `core` 는
 `experiments` 를 import 할 수 없고 도메인 어휘를 코드에 담을 수 없다.
 `tests/test_core_boundary.py` 가 둘 다 강제한다.

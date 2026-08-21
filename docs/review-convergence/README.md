@@ -1,6 +1,6 @@
 # review-convergence — design and results
 
-[한국어](REVIEW-BENCH.ko.md)
+[한국어](README.ko.md)
 
 The question: **does repeated AI code review converge, and what does the loop around it cost?**
 
@@ -155,7 +155,7 @@ adjudicate; the second needs a repository-access contrast, and tier-1 tasks are 
 
 Consequently the strongest result from the wider study this bench derives from — that giving
 reviewers repository access removes false positives — is **not re-confirmed by a tier-1 run**.
-See [`LIMITS.md`](LIMITS.md).
+See [`../LIMITS.md`](../LIMITS.md).
 
 ## 4. Adding a task
 

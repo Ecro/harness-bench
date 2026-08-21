@@ -10,7 +10,7 @@ tier-1   contract-as-oracle, no human adjudication, reproducible by anyone
 tier-2   real firmware module, defects adjudicated by the author — case study, not a claim
 ```
 
-Read with [`LIMITS.md`](LIMITS.md). Only three statements here have been reproduced more
+Read with [`../LIMITS.md`](../LIMITS.md). Only three statements here have been reproduced more
 than once; the rest were observed once.
 
 ---

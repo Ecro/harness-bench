@@ -31,7 +31,7 @@ pre-registration, plus its own `bench-<name>` skill. The suite currently holds o
 
 | # | experiment | question it asks | status |
 |---|---|---|---|
-| **1** | [`review_convergence`](harness_bench/experiments/review_convergence) | Does repeated AI code review converge? | **published** — [results](docs/REVIEW-BENCH.md) |
+| **1** | [`review_convergence`](harness_bench/experiments/review_convergence) | Does repeated AI code review converge? | **published** — [results](docs/review-convergence/README.md) |
 | 2… | — | — | not yet written |
 
 Everything below this line is suite-level: the same commands, artefacts and disciplines apply
@@ -54,11 +54,11 @@ repository access           those false positives drop to 0%, in BOTH vendors' m
 
 | | |
 |---|---|
-| **[Findings →](docs/FINDINGS.md)** | every measurement, with the numbers |
-| **[So how should you review? →](docs/PRESCRIPTION.md)** | the recipe the measurements support |
-| **[How it was measured →](docs/METHODS.md)** | every instrument, and how each was validated |
-| [Experiment 1 in full →](docs/REVIEW-BENCH.md) | design, tasks, and the reproducible tier-1 runs |
-| [Long-form write-up →](docs/STUDY.md) | the whole study as one narrative |
+| **[Findings →](docs/review-convergence/FINDINGS.md)** | every measurement, with the numbers |
+| **[So how should you review? →](docs/review-convergence/PRESCRIPTION.md)** | the recipe the measurements support |
+| **[How it was measured →](docs/review-convergence/METHODS.md)** | every instrument, and how each was validated |
+| [Experiment 1 in full →](docs/review-convergence/README.md) | design, tasks, and the reproducible tier-1 runs |
+| [Long-form write-up →](docs/review-convergence/STUDY.md) | the whole study as one narrative |
 
 Task `retry_policy`, two models, three loops each — measured 2026-08-21:
 
@@ -118,6 +118,12 @@ harness_bench/
   experiments/
     review_convergence/    experiment 1 — does repeated AI code review converge?
     <next>/                a second experiment drops in here, with its own bench-<name> skill
+docs/
+  DESIGN.md · LIMITS.md          the suite: how it measures, and what it cannot claim
+  review-convergence/            experiment 1's own docs — results, methods, prescription
+  <next>/                        the second experiment's docs land beside them, not among them
+results/
+  ledger-<experiment>.md         one ledger per experiment
 ```
 
 `core` may not import `experiments`, and may not carry domain vocabulary in code — enforced
@@ -152,7 +158,9 @@ run.measure(model, ...) -> Profile          the measurement
 traits.TRAIT_KEYS / traits.RULES            what it measures, and what that decides
 ```
 
-It also ships its own frozen tasks, prompts, oracle, pre-registration and `bench-<name>` skill.
+It also ships its own frozen tasks, prompts, oracle, pre-registration and `bench-<name>` skill,
+and its documents live under `docs/<experiment>/` — never in the suite-level `docs/` root, where
+a second experiment's results would read as the suite's.
 See [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## Documentation
@@ -162,7 +170,6 @@ The suite:
 | | |
 |---|---|
 | [`docs/DESIGN.md`](docs/DESIGN.md) | architecture and the six disciplines |
-| [`docs/METHODS.md`](docs/METHODS.md) | how each number was obtained and each instrument validated |
 | [`docs/LIMITS.md`](docs/LIMITS.md) | what this benchmark does not support |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | adding a model, adding an experiment |
 
@@ -170,10 +177,11 @@ Experiment 1 — `review_convergence`:
 
 | | |
 |---|---|
-| [`docs/REVIEW-BENCH.md`](docs/REVIEW-BENCH.md) | the experiment in full: design, tasks, results |
-| [`docs/FINDINGS.md`](docs/FINDINGS.md) | every measurement, with the numbers |
-| [`docs/PRESCRIPTION.md`](docs/PRESCRIPTION.md) | the review recipe the measurements support |
-| [`docs/STUDY.md`](docs/STUDY.md) | long-form narrative write-up: the experiments and the corrections |
+| [`docs/review-convergence/README.md`](docs/review-convergence/README.md) | the experiment in full: design, tasks, results |
+| [`docs/review-convergence/METHODS.md`](docs/review-convergence/METHODS.md) | how each number was obtained and each instrument validated |
+| [`docs/review-convergence/FINDINGS.md`](docs/review-convergence/FINDINGS.md) | every measurement, with the numbers |
+| [`docs/review-convergence/PRESCRIPTION.md`](docs/review-convergence/PRESCRIPTION.md) | the review recipe the measurements support |
+| [`docs/review-convergence/STUDY.md`](docs/review-convergence/STUDY.md) | long-form narrative write-up: the experiments and the corrections |
 
 ## License
 

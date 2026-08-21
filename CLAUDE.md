@@ -96,6 +96,12 @@ the prompt. Every result records the prompt SHA-256.
 Every user-facing document is **bilingual**: `X.md` (English) and `X.ko.md` (Korean),
 cross-linked at the top. Code comments and CLI output are English.
 
+`docs/` holds only what is true of the suite — `DESIGN`, `LIMITS`. Anything that reports or
+explains one experiment's numbers lives in `docs/<experiment>/`, the same split the code and the
+ledger already make. A results document at the `docs/` root reads as the suite's result, and the
+second experiment is when that becomes a lie. Core may reference suite-level documents only;
+an experiment path in `core` is a boundary violation.
+
 Write about design and results. Do not write project history or narrate mistakes — state the
 technical reason a rule exists, not the incident that produced it.
 

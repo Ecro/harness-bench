@@ -10,7 +10,7 @@ description: The review-convergence experiment in harness-bench — its tasks, m
 The invariant procedure — canary, oracle gate, run, ledger, prescription — is in the
 `bench-measure` skill. This one holds only what is specific to this experiment.
 
-Full design and results: `docs/REVIEW-BENCH.md` (`.ko.md` for Korean).
+Full design and results: `docs/review-convergence/README.md` (`.ko.md` for Korean).
 
 ## Tasks (tier-1)
 

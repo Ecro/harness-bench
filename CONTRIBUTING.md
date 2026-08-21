@@ -49,6 +49,10 @@ traits.TRAIT_KEYS / traits.RULES            what it measures, and what that deci
 Results carry `"<experiment>/<task>"`, so the ledger (`results/ledger-<experiment>.md`) and
 every prescription stay scoped to one experiment's trait vocabulary.
 
+Its documents go in `docs/<experiment>/` — findings, methods, prescription, the long-form, and a
+`README.md` as the experiment's front page. Only `DESIGN` and `LIMITS`, which are true of the
+suite, stay at the `docs/` root.
+
 If you need to change `core`, ask first whether core is incomplete or whether the boundary is
 being crossed. `core` may not import `experiments` and may not carry domain vocabulary in
 code; `tests/test_core_boundary.py` enforces both.

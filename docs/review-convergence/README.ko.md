@@ -1,6 +1,6 @@
 # review-convergence — 설계와 결과
 
-[English](REVIEW-BENCH.md)
+[English](README.md)
 
 질문: **AI 코드리뷰를 반복하면 수렴하는가, 그리고 그 루프의 비용은 얼마인가?**
 
@@ -151,7 +151,7 @@ codex    [*]   churn_gate     churn 정지 기준의 근거가 없다 — 라운
 대비가 필요한데 tier-1 과제는 단일 파일이다.
 
 따라서 이 벤치가 파생된 더 넓은 연구의 가장 강한 결과 — *리뷰어에게 리포 접근을 주면 오탐이
-사라진다* — 는 **tier-1 실행으로 재확인되지 않는다.** [`LIMITS.ko.md`](LIMITS.ko.md) 참조.
+사라진다* — 는 **tier-1 실행으로 재확인되지 않는다.** [`../LIMITS.ko.md`](../LIMITS.ko.md) 참조.
 
 ## 4. 과제 추가
 

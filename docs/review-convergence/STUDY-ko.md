@@ -3,7 +3,7 @@
 [English](STUDY.md)
 
 > 이 문서는 `harness-bench`가 만들어지기까지의 실험과 시행착오를 한 흐름으로 정리한 장문 기록이다.
-> 숫자만 빠르게 보려면 [`FINDINGS.ko.md`](FINDINGS.ko.md), 실무 절차만 보려면 [`PRESCRIPTION.ko.md`](PRESCRIPTION.ko.md), 재현 가능한 벤치마크 결과는 [`REVIEW-BENCH.ko.md`](REVIEW-BENCH.ko.md)를 참고하면 된다.
+> 숫자만 빠르게 보려면 [`FINDINGS.ko.md`](FINDINGS.ko.md), 실무 절차만 보려면 [`PRESCRIPTION.ko.md`](PRESCRIPTION.ko.md), 재현 가능한 벤치마크 결과는 [`README.ko.md`](README.ko.md)를 참고하면 된다.
 >
 > 원 데이터·도구·실험 기록: <https://github.com/Ecro/spoton> `work-docs/`, `tools/`
 >
