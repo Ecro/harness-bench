@@ -39,9 +39,35 @@ def _compose_fix(spec: str, module: str, findings: list) -> str:
             + json.dumps(findings, indent=2, ensure_ascii=False) + "\n")
 
 
+DRY_THRESHOLD = 0.7
+MIN_POINTS = 4
+MIN_LOOPS = 3
+
+
 def _dries(churns: list[int]) -> bool | None:
     r = _ratio(churns)
-    return None if r is None else r < 0.7
+    return None if r is None else r < DRY_THRESHOLD
+
+
+def _dries_across(series: list[list[int]]) -> tuple[bool | None, list, str]:
+    """여러 루프의 판정을 합친다.
+
+    D-001 이 이 함수를 만들게 했다. 원 연구와 이 레포의 첫 측정이 claude 의 churn
+    방향에 대해 정반대로 나왔는데, **양쪽 다 루프 하나**였다. churn 계열은 시끄럽고
+    (한 루프에서 27 다음에 46), 루프 하나의 방향은 방향이 아니라 표본이다.
+
+    그래서 루프 3개 미만이면 **판정하지 않는다**. 3개 이상이면 다수결로 하되,
+    갈리면(예: 2:1) 그 사실을 note 에 남긴다 -- 다수결이 만장일치를 가장하지 않도록.
+    """
+    ratios = [_ratio(c) for c in series]
+    usable = [r for r in ratios if r is not None]
+    if len(usable) < MIN_LOOPS:
+        return None, ratios, f"루프 {len(usable)}/{MIN_LOOPS} -- 판정 불가 (D-001)"
+    votes = [r < DRY_THRESHOLD for r in usable]
+    yes = sum(votes)
+    verdict = yes > len(votes) / 2
+    split = "만장일치" if yes in (0, len(votes)) else f"갈림 {yes}:{len(votes)-yes}"
+    return verdict, ratios, f"{split} · ratios={[round(r,3) for r in usable]}"
 
 
 def _ratio(churns: list[int]) -> float | None:
@@ -58,8 +84,8 @@ def _churn(a: str, b: str) -> int:
 
 
 def measure(adapter_name: str, task_slug: str = "retry_policy", *,
-            n_spread: int = 5, n_rounds: int = 5, out_dir: Path | None = None,
-            log=print) -> Profile:
+            n_spread: int = 5, n_rounds: int = 5, n_loops: int = 1,
+            out_dir: Path | None = None, log=print) -> Profile:
     task = TASKS[task_slug]
     if not task.reference:
         raise ValueError(f"{task_slug} ships no reference; spread needs a known-good v0")
@@ -83,36 +109,50 @@ def measure(adapter_name: str, task_slug: str = "retry_policy", *,
         if n is not None:
             counts.append(n)
 
-    # --- 루프 -------------------------------------------------------------
-    module, churns, round_counts, dec_total, dec_rej, ac_ok = v0, [], [], 0, 0, True
-    for rnd in range(1, n_rounds + 1):
-        d = root / f"round{rnd}"
-        rv = call(adapter, "review", _compose_review(spec, module), d)
-        calls.append(rv); save(rv, d, "review")
-        if rv.status != "ok":
-            log(f"  round {rnd}: review {rv.status} — 중단 (재시도 없음)"); break
-        findings = (rv.parsed or {}).get("findings", [])
-        round_counts.append(len(findings))
-        if not findings:
-            log(f"  round {rnd}: 지적 0 — 종료"); break
+    # --- 루프 (n_loops 회 독립 반복) -------------------------------------
+    all_churns: list[list[int]] = []
+    round_counts: list[int] = []
+    dec_total = dec_rej = 0
+    ac_ok = True
+    final_module = v0
+    for loop in range(1, n_loops + 1):
+        module, churns, counts_l = v0, [], []
+        for rnd in range(1, n_rounds + 1):
+            d = root / f"loop{loop}" / f"round{rnd}"
+            rv = call(adapter, "review", _compose_review(spec, module), d)
+            calls.append(rv); save(rv, d, "review")
+            if rv.status != "ok":
+                log(f"  L{loop} R{rnd}: review {rv.status} — 중단 (재시도 없음)"); break
+            findings = (rv.parsed or {}).get("findings", [])
+            counts_l.append(len(findings))
+            if not findings:
+                log(f"  L{loop} R{rnd}: 지적 0 — 종료"); break
 
-        fx = call(adapter, "fix", _compose_fix(spec, module, findings), d)
-        calls.append(fx); save(fx, d, "fix")
-        new = (fx.parsed or {}).get("code")
-        if fx.status != "ok" or not new:
-            log(f"  round {rnd}: fix {fx.status} — 중단 (재시도 없음)"); break
+            fx = call(adapter, "fix", _compose_fix(spec, module, findings), d)
+            calls.append(fx); save(fx, d, "fix")
+            new = (fx.parsed or {}).get("code")
+            if fx.status != "ok" or not new:
+                log(f"  L{loop} R{rnd}: fix {fx.status} — 중단 (재시도 없음)"); break
 
-        dec = (fx.parsed or {}).get("decisions", []) or []
-        dec_total += len(dec)
-        dec_rej += sum(1 for x in dec if x.get("action") == "rejected")
-        churns.append(_churn(module, new))
-        o = oracle.run(new, task.suite, task.module_name)
-        ac_ok &= o.green
-        log(f"  round {rnd}: {len(findings)}건 → churn {churns[-1]}, "
-            f"{len(new.splitlines())}줄, {o.passed}/{o.total} {'GREEN' if o.green else 'RED'}")
-        module = new
+            dec = (fx.parsed or {}).get("decisions", []) or []
+            dec_total += len(dec)
+            dec_rej += sum(1 for x in dec if x.get("action") == "rejected")
+            churns.append(_churn(module, new))
+            o = oracle.run(new, task.suite, task.module_name)
+            ac_ok &= o.green
+            log(f"  L{loop} R{rnd}: {len(findings)}건 → churn {churns[-1]}, "
+                f"{len(new.splitlines())}줄, {o.passed}/{o.total} "
+                f"{'GREEN' if o.green else 'RED'}")
+            module = new
+        if churns:
+            all_churns.append(churns)
+        if len(counts_l) > len(round_counts):
+            round_counts = counts_l
+        final_module = module
+    module = final_module
 
     # --- 파생 (LLM 콜 0) ---------------------------------------------------
+    _verdict, _ratios, _note = _dries_across(all_churns)
     ok = [c for c in calls if c.status == "ok"]
     cost = [c.usage.cost_usd for c in ok if c.usage.cost_usd is not None]
     toks = [c.usage.total_tokens for c in ok if c.usage.total_tokens is not None]
@@ -129,19 +169,20 @@ def measure(adapter_name: str, task_slug: str = "retry_policy", *,
         # 마지막 값 하나로 판정하지 않는다. churn 계열은 시끄럽고([70,58,27,46,33]),
         # 마지막-대-처음 비교는 잡음 하나에 뒤집힌다. 전반부 평균 대 후반부 평균으로
         # 보고, 4점 미만이면 아예 판정하지 않는다(None).
-        "churn_dries": T("churn_dries", _dries(churns), note=str(churns)),
-        "churn_ratio": T("churn_ratio", _ratio(churns), "후/전",
-                         note="후반부 평균 / 전반부 평균"),
+        "churn_dries": T("churn_dries", _verdict, note=_note),
+        "churn_ratio": T("churn_ratio",
+                         round(sum(u) / len(u), 3) if (u := [r for r in _ratios if r]) else None,
+                         "후/전", note=f"루프별 {[round(r,3) if r else None for r in _ratios]}"),
         "rejection_rate": T("rejection_rate",
                             round(dec_rej / dec_total, 3) if dec_total else None,
                             note=f"{dec_rej}/{dec_total}"),
         "malformed_rate": T("malformed_rate",
                             round(sum(c.status == "malformed" for c in calls) / len(calls), 3)
                             if calls else None),
-        "ac_held": T("ac_held", ac_ok if churns else None),
+        "ac_held": T("ac_held", ac_ok if all_churns else None),
         "loc_direction": T("loc_direction",
                            round(len(module.splitlines()) / len(v0.splitlines()), 3)
-                           if churns else None, "×"),
+                           if all_churns else None, "×"),
         "tools_blockable": T("tools_blockable", adapter.tools_blockable),
         # tier-2 전용 — tier-1 이 원리적으로 못 잰다. 추정으로 채우지 않는다.
         "finds_per_call": T("finds_per_call", None, note="tier-2 전용 (판정된 결함 집합 필요)"),

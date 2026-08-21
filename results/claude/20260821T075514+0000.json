@@ -5,30 +5,37 @@
   "traits": {
     "spread": {
       "key": "spread",
-      "value": 2,
+      "value": null,
       "unit": "",
-      "note": "n=5 [13, 13, 12, 14, 12]",
-      "degraded": false
+      "note": "n=0 []",
+      "degraded": true
     },
     "loop_decay": {
       "key": "loop_decay",
-      "value": -0.5,
+      "value": -1.25,
       "unit": "",
-      "note": "[11, 10, 10, 8, 9]",
+      "note": "[13, 9, 9, 9, 8]",
       "degraded": false
     },
     "churn_dries": {
       "key": "churn_dries",
-      "value": true,
+      "value": false,
       "unit": "",
-      "note": "[70, 58, 27, 46, 33]",
+      "note": "갈림 1:2 · ratios=[0.611, 0.732, 0.72]",
+      "degraded": false
+    },
+    "churn_ratio": {
+      "key": "churn_ratio",
+      "value": 0.688,
+      "unit": "후/전",
+      "note": "루프별 [0.611, 0.732, 0.72]",
       "degraded": false
     },
     "rejection_rate": {
       "key": "rejection_rate",
-      "value": 0.458,
+      "value": 0.209,
       "unit": "",
-      "note": "22/48",
+      "note": "32/153",
       "degraded": false
     },
     "malformed_rate": {
@@ -47,7 +54,7 @@
     },
     "loc_direction": {
       "key": "loc_direction",
-      "value": 1.391,
+      "value": 1.258,
       "unit": "×",
       "note": "",
       "degraded": false
@@ -77,10 +84,8 @@
   "exploratory": true,
   "prereg_sha256": null,
   "tools_blockable": true,
-  "total_calls": 15,
-  "total_cost_usd": 6.6018,
-  "total_tokens": 196315,
-  "created_at": "2026-08-21T05:46:26+00:00",
-  "superseded_by": "3-loop run (D-001)",
-  "note": "n=1 루프. churn_dries=True 는 이 실행의 ratio 0.617 에서 나왔는데, 3루프 재측정 결과 세 값이 0.611~0.732 로 문턱 0.7 언저리에 몰려 있고 판정은 False(1:2)다. 이 행은 표본을 방향으로 착각한 사례로 보존한다."
+  "total_calls": 30,
+  "total_cost_usd": 15.7399,
+  "total_tokens": 462800,
+  "created_at": "2026-08-21T07:55:14+00:00"
 }

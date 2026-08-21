@@ -38,7 +38,8 @@ def render_ledger(rows: list[dict], trait_keys: dict) -> str:
            "| " + " | ".join(head) + " |",
            "|" + "|".join(["---"] * len(head)) + "|"]
     for r in sorted(rows, key=lambda r: (r["model"], r["created_at"])):
-        cells = [r["model"], (r.get("model_version") or "?")[:28],
+        mark = " ~~(superseded)~~" if r.get("superseded_by") else ""
+        cells = [r["model"] + mark, (r.get("model_version") or "?")[:28],
                  r["created_at"][:10], str(r.get("total_calls", "")),
                  f"${r['total_cost_usd']:.2f}" if r.get("total_cost_usd") else "—"]
         for k in keys:
@@ -53,6 +54,9 @@ def render_ledger(rows: list[dict], trait_keys: dict) -> str:
 
 def _caveats(r: dict) -> list[str]:
     out = []
+    if r.get("superseded_by"):
+        out.append(f"`{r['model']}` — superseded by {r['superseded_by']}. "
+                   f"삭제하지 않는다: {r.get('note', '')}")
     if r.get("exploratory"):
         out.append(f"`{r['model']}` — EXPLORATORY: 예측을 사전 동결하지 않은 측정")
     if r.get("tools_blockable") is False:

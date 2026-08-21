@@ -39,7 +39,8 @@ def cmd_canary(a) -> int:
 
 def cmd_run(a) -> int:
     _, run, _ = _experiment(a.exp)
-    p = run.measure(a.model, a.task, n_spread=a.spread, n_rounds=a.rounds)
+    p = run.measure(a.model, a.task, n_spread=a.spread, n_rounds=a.rounds,
+                    n_loops=a.loops)
     out = store.write(p, RESULTS)
     print(f"\n→ {out.relative_to(ROOT)}")
     return 0
@@ -75,7 +76,8 @@ def main(argv=None) -> int:
     sub = ap.add_subparsers(dest="cmd", required=True)
     for name, fn, extra in (
         ("canary", cmd_canary, []),
-        ("run", cmd_run, [("--task", "retry_policy"), ("--spread", 5), ("--rounds", 5)]),
+        ("run", cmd_run, [("--task", "retry_policy"), ("--spread", 5), ("--rounds", 5),
+                          ("--loops", 1)]),
         ("compare", cmd_compare, []),
         ("prescribe", cmd_prescribe, []),
     ):
