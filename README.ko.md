@@ -16,9 +16,20 @@
 > **모델 순위표가 아니다.** 하네스 설계의 효과를 재는 것이지 모델 능력을 재지 않는다.
 > [`docs/LIMITS.ko.md`](docs/LIMITS.ko.md) 참조.
 
-## 📊 AI 코드리뷰를 반복하면 수렴하는가?
+## 실험 목록
 
-**11개 실험 · 약 400회 모델 호출 · 두 벤더.** 여기서 시작하십시오:
+harness-bench 는 **실험 모음**입니다. `core` 가 측정 기계를 제공하고, 실험 각각이 자기
+과제·프롬프트·오라클·지표·사전등록을 가져옵니다. 현재 실험은 하나입니다:
+
+| # | 실험 | 묻는 질문 | 상태 |
+|---|---|---|---|
+| **1** | [`review_convergence`](harness_bench/experiments/review_convergence) | AI 코드리뷰를 반복하면 수렴하는가? | **공개됨** — 아래 결과 |
+| 2… | — | — | 아직 없음 |
+
+### 📊 실험 1 — `review_convergence`: AI 코드리뷰를 반복하면 수렴하는가?
+
+**이 모음의 첫 번째 실험입니다. 측정 11개 · 약 400회 모델 호출 · 두 벤더.**
+여기서 시작하십시오:
 
 | | |
 |---|---|
@@ -84,7 +95,8 @@ harness_bench/
   core/          "어떻게 재는가" 를 알고 "무엇을 재는가" 는 모른다
                  (sandbox · runner · cluster · prereg · stats · ledger)
   experiments/
-    review_convergence/    AI 코드리뷰를 반복하면 수렴하는가
+    review_convergence/    실험 1 — AI 코드리뷰를 반복하면 수렴하는가
+    <다음>/                 두 번째 실험이 자기 bench-<name> 스킬과 함께 여기 들어온다
 ```
 
 `core` 는 `experiments` 를 import 할 수 없고 도메인 어휘를 코드에 담을 수 없다. 테스트로
@@ -110,7 +122,7 @@ ARI 게이트      문턱 미달이면 숫자가 아니라 문자열 UNQUOTABLE 
 
 ## 현재 결과
 
-`review_convergence` / `retry_policy`, 두 모델, 각 3루프 — 2026-08-21 측정.
+실험 1(`review_convergence`), 과제 `retry_policy`, 두 모델, 각 3루프 — 2026-08-21 측정.
 
 | 모델 | 콜 | 비용 | loop_decay | churn | 거절률 | 코드 크기 | 도구 차단 |
 |---|---|---|---|---|---|---|---|
@@ -127,11 +139,11 @@ ARI 게이트      문턱 미달이면 숫자가 아니라 문자열 UNQUOTABLE 
 | | |
 |---|---|
 | [`docs/METHODS.ko.md`](docs/METHODS.ko.md) | 각 숫자를 어떻게 얻었고 계측기를 어떻게 검증했는가 |
-| [`docs/FINDINGS.ko.md`](docs/FINDINGS.ko.md) | 연구에서 측정된 전부, 숫자와 함께 |
+| [`docs/FINDINGS.ko.md`](docs/FINDINGS.ko.md) | 실험 1에서 측정된 전부, 숫자와 함께 |
 | [`docs/PRESCRIPTION.ko.md`](docs/PRESCRIPTION.ko.md) | 측정이 뒷받침하는 리뷰 레시피 |
 | [`docs/STUDY-ko.md`](docs/STUDY-ko.md) | 장문 서사 초고 |
 | [`docs/DESIGN.ko.md`](docs/DESIGN.ko.md) | harness-bench 구조와 여섯 규율 |
-| [`docs/REVIEW-BENCH.ko.md`](docs/REVIEW-BENCH.ko.md) | 리뷰 실험: 설계·과제·결과 |
+| [`docs/REVIEW-BENCH.ko.md`](docs/REVIEW-BENCH.ko.md) | 실험 1 전문: 설계·과제·결과 |
 | [`docs/LIMITS.ko.md`](docs/LIMITS.ko.md) | 이 벤치로 주장할 수 없는 것 |
 | [`CONTRIBUTING.ko.md`](CONTRIBUTING.ko.md) | 모델 추가, 실험 추가 |
 

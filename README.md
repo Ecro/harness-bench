@@ -16,9 +16,21 @@ When a new model ships, one run puts it in the same table as the others — and 
 > This is **not a model leaderboard.** It measures harness design, not model capability.
 > See [`docs/LIMITS.md`](docs/LIMITS.md).
 
-## 📊 Does repeated AI code review converge?
+## The experiments
 
-**11 experiments · ~400 model calls · two vendors.** Start here:
+harness-bench is a **suite of experiments**. `core` supplies the measurement machinery; each
+experiment supplies its own tasks, prompts, oracle, metrics and pre-registration. The suite
+currently holds one:
+
+| # | experiment | question it asks | status |
+|---|---|---|---|
+| **1** | [`review_convergence`](harness_bench/experiments/review_convergence) | Does repeated AI code review converge? | **published** — results below |
+| 2… | — | — | not yet written |
+
+### 📊 Experiment 1 — `review_convergence`: does repeated AI code review converge?
+
+**The first experiment in the suite. 11 measurements · ~400 model calls · two vendors.**
+Start here:
 
 | | |
 |---|---|
@@ -85,7 +97,8 @@ An ungraded rule does not render.
 harness_bench/
   core/          knows HOW to measure, not WHAT   (sandbox · runner · cluster · prereg · stats · ledger)
   experiments/
-    review_convergence/    does repeated AI code review converge?
+    review_convergence/    experiment 1 — does repeated AI code review converge?
+    <next>/                a second experiment drops in here, with its own bench-<name> skill
 ```
 
 `core` may not import `experiments`, and may not carry domain vocabulary in code — enforced
@@ -111,7 +124,8 @@ Rationale for each: [`docs/DESIGN.md`](docs/DESIGN.md) §3.
 
 ## Current results
 
-`review_convergence` / `retry_policy`, two models, three loops each — measured 2026-08-21.
+Experiment 1 (`review_convergence`), task `retry_policy`, two models, three loops each —
+measured 2026-08-21.
 
 | model | calls | cost | loop_decay | churn | rejection | code size | tools blockable |
 |---|---|---|---|---|---|---|---|
@@ -128,11 +142,11 @@ Full design and results: [`docs/REVIEW-BENCH.md`](docs/REVIEW-BENCH.md)
 | | |
 |---|---|
 | [`docs/METHODS.md`](docs/METHODS.md) | how each number was obtained and each instrument validated |
-| [`docs/FINDINGS.md`](docs/FINDINGS.md) | every measurement from the study, with the numbers |
+| [`docs/FINDINGS.md`](docs/FINDINGS.md) | every measurement from experiment 1, with the numbers |
 | [`docs/PRESCRIPTION.md`](docs/PRESCRIPTION.md) | the review recipe the measurements support |
 | [`docs/STUDY-ko.md`](docs/STUDY-ko.md) | long-form narrative write-up (Korean) |
 | [`docs/DESIGN.md`](docs/DESIGN.md) | harness-bench architecture and the six disciplines |
-| [`docs/REVIEW-BENCH.md`](docs/REVIEW-BENCH.md) | the review experiment: design, tasks, results |
+| [`docs/REVIEW-BENCH.md`](docs/REVIEW-BENCH.md) | experiment 1 in full: design, tasks, results |
 | [`docs/LIMITS.md`](docs/LIMITS.md) | what this benchmark does not support |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | adding a model, adding an experiment |
 
