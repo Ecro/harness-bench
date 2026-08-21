@@ -13,9 +13,9 @@ Each recommendation ends with a marker for **how strong the evidence is**. Two i
 "recommended" and rest on very different ground.
 
 ```text
-[reproduced]     the same result appeared in different models or different conditions
-[measured once]  measured once, in one condition. Not yet reproduced
-[judgement]      not directly supported by data — a judgement based on what was observed
+[evidence: reproduced]     the same result appeared in different models or different conditions
+[evidence: measured once]  measured once, in one condition. Not yet reproduced
+[evidence: judgement]      not directly supported by data — a judgement based on what was observed
 ```
 
 In the machine output of `bench prescribe` and in the ledger, those same grades print as `***`,
@@ -62,7 +62,7 @@ fixer      takes those reports and actually edits the code. May decline
 Coverage is *what share of the real defects that exist were found*, and those three figures are
 one, three and five reviews.
 
-> ### Review many times. Fix once. `[reproduced]`
+> ### Review many times. Fix once. `[evidence: reproduced]`
 
 The gain in discovery comes from the review side, and the risk of changing the code comes from
 the fix side. A harness — the loop wrapped around the model — that alternates the two on every
@@ -73,7 +73,7 @@ pass grows the cost of fixing faster than the benefit of finding.
 ## The procedure
 
 ```text
-1  give reviewers read access to the source tree                    [reproduced]
+1  give reviewers read access to the source tree                    [evidence: reproduced]
      With only the target file, 29% of the distinct defects were false positives;
      with the repository readable, 0%. The same in both models.
      The price is recall, which fell from 77% to 54% — able to check, the reviewer
@@ -81,7 +81,7 @@ pass grows the cost of fixing faster than the benefit of finding.
      If you want neither loss, run both conditions and merge them
      (20 calls spent that way found all 13 adjudicated defects).
 
-2  if you can afford it, split by category instead of repeating     [measured once]
+2  if you can afford it, split by category instead of repeating     [evidence: measured once]
      For the same six calls, repeating one prompt found 19.7 distinct findings while
      six areas (design, functionality, complexity, robustness, naming, style) found
      30.0 (+52%) — with 21% fewer raw findings to read, because less is repeated.
@@ -91,7 +91,7 @@ pass grows the cost of fixing faster than the benefit of finding.
        only at module-internal state, one lens brought back a false positive the
        repository had already removed.
 
-3  do not use agreement between reviewers as a test of truth        [reproduced]
+3  do not use agreement between reviewers as a test of truth        [evidence: reproduced]
      With a single file in scope, false positives were reported 6.8 times out of 10 on
      average and real defects 3.4 — the more often reported were the false ones.
      The reviewers converged because none of them could see the same information.
@@ -99,13 +99,13 @@ pass grows the cost of fixing faster than the benefit of finding.
      ⚠ In one condition this conflicted with rule 2. There is no filter rule yet for
        using both together.
 
-4  have a human triage once — do not automate                       [measured once]
+4  have a human triage once — do not automate                       [evidence: measured once]
      69% of the adjudicated findings were about naming, comments and structure: not
      wrong, but not defects either. There is no need to pass all of that to a fixer.
      Without the human step the pipeline still ran — the fixer declined 34% instead —
      but the code grew 152% in three rounds.
 
-5  merge the findings and fix once, with the contract and read-only tests  [measured once]
+5  merge the findings and fix once, with the contract and read-only tests  [evidence: measured once]
      74-80% of the findings handed over genuinely disappeared from the next review;
      fixing everything in one pass does work.
      Once the fixer could read the tests but not edit them, it began declining
@@ -113,7 +113,7 @@ pass grows the cost of fixing faster than the benefit of finding.
      recurred through an entire loop went to zero.
      Note that this defers the problem out of scope rather than solving it.
 
-6  record size, complexity and churn alongside the tests            [reproduced]
+6  record size, complexity and churn alongside the tests            [evidence: reproduced]
      Compliance was 19/19 in all ten conditions across 47 rounds, and 23/23 in all 54
      rounds of the benchmark's own run: on pass/fail alone no approach can be told
      from another.
@@ -121,7 +121,7 @@ pass grows the cost of fixing faster than the benefit of finding.
      prompt, +58% for the one whose fixer was given no contract.
      It costs one parse of the code. No extra model calls.
 
-7  decide re-review by how much changed, not by round count         [measured once]
+7  decide re-review by how much changed, not by round count         [evidence: measured once]
      When the fix was small, the next review yielded little.
      When it was large, there was a lot of newly written code and reviewing again paid.
      The new-finding rate moved with fix churn (correlation r = 0.837).
@@ -130,20 +130,20 @@ pass grows the cost of fixing faster than the benefit of finding.
        194 → 262 → 395 lines and kept rising.
        Without a contract, set a round cap instead.
 
-8  if the loop keeps reversing the same decision, check the spec    [measured once]
+8  if the loop keeps reversing the same decision, check the spec    [evidence: measured once]
      Across 47 rounds exactly one behaviour actually moved, and it was the single
      region the contract left undefined.
      If the same decision is reversed twice, look for the blank in the spec before
      changing more code.
 
-9  even without a spec, state the scope: "the public surface is fixed"  [measured once]
+9  even without a spec, state the scope: "the public surface is fixed"  [evidence: measured once]
      That one line — do not change what other code depends on — cut the final line
      count by 7% and cumulative churn by 30%.
      ⚠ In exchange, the decline rate rose from 26% to 50%.
        With nothing to check against, a fixer declines anything ambiguous.
        Whether half of those refusals were real loss was not measured.
 
-10 run two models once each rather than one model twice             [reproduced]
+10 run two models once each rather than one model twice             [evidence: reproduced]
      Both models removed the same four false positives, but the real defects they
      found differed (4 of 10 each, union 5).
      Three mixed calls found more real defects than six calls of a single model (repo A).
