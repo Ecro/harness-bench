@@ -1,0 +1,19 @@
+[project]
+name = "harness-bench"
+version = "0.1.0.dev0"
+description = "Reproducible measurement of LLM harness design, across models and over time"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["harness_bench*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
