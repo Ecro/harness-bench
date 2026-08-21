@@ -38,7 +38,8 @@ What survived:
    - Some real defects showed up in only 1 run out of 10.
 
 3. **But being reported many times is no guarantee of being real.**
-   - Given a single file, the false positives were reported *more* often than the real defects.
+   - Given a single file, the false positives (findings that are not defects at all) were
+     reported *more* often than the real defects.
    - Not because the reviewers shared information — because they were all **missing the same
      information**.
 
@@ -143,6 +144,11 @@ The clustering was checked for arbitrariness:
 - reshuffled and re-clustered three times: `ARI 1.000`
 - a different vendor's model clustering the same 61 findings: the same 14 groups
 
+> **ARI** (Adjusted Rand Index) — how far two clusterings agree on the same partition. `1.000`
+> is identical; `0` is no better than grouping at random. It is used here to check that
+> "which findings are the same defect" does not depend on who (or which model) grouped them,
+> or in what order.
+
 On that basis, the fraction of distinct defects found as review count rises:
 
 ```text
@@ -169,6 +175,9 @@ real defects  10
 false          4
 false rate    29%
 ```
+
+> **False positive** — a finding reported as a defect that is not one. Throughout this document,
+> the real/false verdicts were made by reading **the whole repository**, not the target file.
 
 The problem was *where* the false ones sat.
 
@@ -296,6 +305,9 @@ When a test fails, the first question is:
 
 The first experiment's real weakness was its oracle.
 
+> **Oracle** — whatever decides that a result is right or wrong. Here the acceptance suite is
+> the oracle. If the oracle itself is wrong, every number measured on top of it is void.
+
 Whatever a failing test showed, you could always answer:
 
 > "Wasn't that test over-specified?"
@@ -314,6 +326,10 @@ So the second task inverted the order.
 
 The target was a Python retry-policy module with exponential backoff, full jitter and a circuit
 breaker.
+
+> **Acceptance criterion (AC)** — one verifiable sentence carved out of what the spec
+> guarantees. "Frozen" means fixed before any implementation exists and never edited after —
+> the only defence against *"the tests were fitted to the implementation"*.
 
 From here on, "23/23" means all acceptance tests pass, and "19/19" means all 19 criteria hold.
 
@@ -360,6 +376,10 @@ median 12
 ```
 
 All 14 runs returned findings.
+
+> **bare vs structured prompt** — bare is close to "review this code" and nothing more;
+> structured prescribes what to look at, in what order, and in what output format. The two arms
+> differ in the prompt only — same code, same model, same number of rounds.
 
 And many of them were not nitpicks:
 
@@ -450,12 +470,18 @@ On compliance, all 47 rounds were identical.
 
 So I layered other measurements onto the existing snapshots.
 
-- differential testing
-- LOC
-- Cognitive Complexity
-- worst-function complexity
-- mutation score
-- relative churn
+- **Differential testing** — replay identical inputs against two versions and see whether the
+  observable behaviour diverges. It catches behaviour changes the tests never look at.
+- **LOC** — lines of code.
+- **Cognitive Complexity** — how much nesting and branching a reader has to hold in their head.
+  Unlike cyclomatic complexity it weights nesting.
+- **worst-function complexity** — not the file's total but the single most complex function:
+  where the reading cost is concentrated.
+- **mutation score** — the fraction of deliberately planted defects the suite catches. A proxy
+  for what the tests actually guarantee.
+- **relative churn** — **churn** is the number of lines added and deleted in a round, i.e. the
+  *amount changed* (not a quality measure). Relative churn divides the accumulated churn by
+  file size, so files of different sizes can be compared.
 
 ## 8.1 How much did behaviour outside the contract move?
 
@@ -652,6 +678,10 @@ median 11%
 range 0–31%
 ```
 
+> **Null distribution** — how far a value ranges when there is no effect at all. Here it is the
+> novelty rate with the code unchanged; only a post-fix value outside that range licenses the
+> claim that the fix caused it.
+
 Then compared re-reviews after a real fix.
 
 ```text
@@ -751,6 +781,11 @@ Same budget on the firmware task:
 single reviewer recall: 50%
 fan-out recall:         43%
 ```
+
+> **Recall** — of the real defects that exist, what fraction was found. **Precision** — of the
+> findings reported, what fraction was real. They usually trade off: say less and precision
+> rises while recall falls. The recall denominator in this study is the set of *known* defects,
+> so it is optimistic (§23.5).
 
 The single review was slightly better.
 
@@ -890,6 +925,10 @@ Fisher exact test:
 p = 1.0
 ```
 
+> **Fisher exact test · p-value** — a test for whether a difference in a small 2×2 table is
+> distinguishable from chance. `p = 1.0` means it is not — the presence of a contract does not
+> explain the breakage.
+
 The contract does not explain the breakage on the C side.
 
 As shown above, the real cause was **tests pinning an unreachable state**.
@@ -919,6 +958,10 @@ B and C were separated and tested.
 | A only | 26% | 254 | 195 |
 | A+B | 50% | 237 | 136 |
 | A+B+C | 26% | 202 | 191 |
+
+> **Decline rate** — the share of handed-over findings the fixer *explicitly refused, with a
+> stated reason* — not the share it quietly ignored. High is not bad and low is not good; the
+> information is in what the refusal was grounded on.
 
 Their roles turn out to be different.
 
@@ -972,6 +1015,10 @@ A fixer that could read the tests started making judgements like:
 Build failures that had recurred across an entire loop dropped to zero.
 
 But this is **deferral**, not resolution.
+
+> **accept / decline / defer** — the three verdicts a fixer can return on a finding: fixed,
+> "not a problem", and "a real problem that cannot be fixed within this scope". A defer is not
+> resolved; if it is not counted, it disappears quietly.
 
 Real problems that fall outside the scope simply do not get fixed.
 
