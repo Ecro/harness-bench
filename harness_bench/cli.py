@@ -23,8 +23,10 @@ def _experiment(name: str):
 
 
 def cmd_canary(a) -> int:
-    from .experiments.review_convergence.canary import build
-    c = build().run(a.model, CONFIG.scratch_root / "canary" / a.model,
+    from .experiments.review_convergence.canary import build, plant
+    scratch = CONFIG.scratch_root / "canary" / a.model
+    plant(scratch)
+    c = build().run(a.model, scratch,
                     extra_argv=["--permission-mode", "bypassPermissions"]
                     if a.model == "claude" else [])
     print(c.report())
