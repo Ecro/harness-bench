@@ -36,9 +36,14 @@ TRAIT_KEYS = {
 }
 
 RULES: list[Rule] = [
+    # The measured comparison was at EQUAL budget: six category prompts against the same
+    # prompt six times. Stated as "several calls" rather than a multiple of one call, which
+    # is a different comparison.
     Rule("fanout", lambda v: v["finds_per_call"] < 2.0,
-         "add category fan-out (only when a 3x call budget is available)", "**",
-         "low yield per call; a single reviewer truncates low-frequency findings"),
+         "add category fan-out, but only where the review axes actually separate", "**",
+         "low yield per call; a single reviewer truncates low-frequency findings. At equal "
+         "budget fan-out found more distinct issues, and gained nothing on a task whose "
+         "lenses overlapped"),
 
     # Graded ** rather than ***: the three-loop verdict was a 1:2 split, and the second model
     # cannot be measured on this trait at all (its loops end too early), so "reproduced across
@@ -77,17 +82,23 @@ RULES: list[Rule] = [
          "human triage load is light - but suspect what it dropped", "**",
          "repo access halves the finding count; the terse arm misses things"),
 
+    # *** because a spread this wide was seen in both vendors' models, though not under
+    # every prompt: it appeared in one model's bare arm and the other's structured arm.
     Rule("repetition", lambda v: v["spread"] >= 3,
          "do not stop at one pass - run-to-run variance is large", "***",
-         "finding counts on identical code swing widely between runs"),
+         "finding counts on identical code swing widely between runs; observed in both "
+         "vendors' models, though the width depends on the prompt"),
 
     Rule("as_fixer", lambda v: v["rejection_rate"] > 0.45,
          "give the fixer the contract document, not just a scope instruction", "**",
          "high rejection rate: told a surface is fixed with nothing to check against, "
          "a fixer rejects everything ambiguous"),
 
+    # Graded * rather than **: malformed_rate measured 0.0 on every adapter so far, so no
+    # measurement supports this advice. It is prudence about a path that has not been
+    # exercised, and it says so.
     Rule("json_contract", lambda v: v["malformed_rate"] > 0.05,
-         "treat parse failure as a normal path, not an exception", "**",
+         "treat parse failure as a normal path, not an exception", "*",
          "responses arrive unparseable despite a structured-output instruction"),
 
     Rule("comparability", lambda v: v["tools_blockable"] is False,
