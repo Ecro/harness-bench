@@ -1,0 +1,22 @@
+# ── 시크릿: 이 블록은 절대 완화하지 말 것 ────────────────────────────
+# runner 는 실행 시 ~/.claude/.credentials.json 과 ~/.codex/auth.json 을
+# 스크래치 HOME 으로 복사한다. 스크래치가 한 번이라도 커밋되면 되돌릴 수 없다.
+scratch/
+.scratch/
+**/home/.claude/
+**/home/.codex/
+*.credentials.json
+auth.json
+.env
+.env.*
+# ─────────────────────────────────────────────────────────────────
+
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+.DS_Store
+
+# 실행 산출물 — 원장(ledger)과 요약만 커밋한다
+results/**/raw/
