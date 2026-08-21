@@ -24,10 +24,10 @@ experiment detail.
 The short version:
 
 ```bash
-bench canary --model <name>       # MUST pass, in BOTH directions, first
-bench run    --model <name> --loops 3
-bench compare
-bench prescribe --model <name>
+bench canary    --exp <experiment> --model <name>   # MUST pass, in BOTH directions, first
+bench run       --exp <experiment> --model <name> --loops 3
+bench compare   --exp <experiment>                 # -> results/ledger-<experiment>.md
+bench prescribe --exp <experiment> --model <name>
 ```
 
 A canary failure on the **POS** side is not isolation working — it is a broken probe, and

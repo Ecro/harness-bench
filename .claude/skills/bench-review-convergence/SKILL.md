@@ -35,8 +35,8 @@ derived   0 calls                     LOC, compliance, malformed and rejection r
 ```
 
 ```bash
-bench run --model <name> --loops 3                 # ~35 calls, full profile
-bench run --model <name> --spread 0 --loops 3      # ~30 calls, loop behaviour only
+bench run --exp review_convergence --model <name> --loops 3             # ~35 calls, full profile
+bench run --exp review_convergence --model <name> --spread 0 --loops 3  # ~30 calls, loop behaviour only
 ```
 
 Adding a model to the table should cost about that. Make it more expensive and nobody adds one.

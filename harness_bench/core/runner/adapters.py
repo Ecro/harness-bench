@@ -54,10 +54,16 @@ class ClaudeAdapter(Adapter):
 
     def argv(self, cfg, scratch, allow_tools, extra):
         cfg.require("claude_bin")
+        # When any tool is allowed, this CLI treats a read outside the working directory as a
+        # permission prompt and, non-interactively, auto-answers it with a denial -- which
+        # looks exactly like a failed mount. The real boundary is the namespace, so answering
+        # its own prompt does not widen what is reachable. Calls with no tools are unaffected.
+        permission = ["--permission-mode", "bypassPermissions"] if allow_tools else []
         return [
             str(cfg.claude_bin), "-p",
             "--model", self.model_id,
             "--effort", self.effort,
+            *permission,
             "--strict-mcp-config",
             # json envelope carries usage + the RESOLVED model id. The prompt the model sees
             # is unchanged, so this does not alter the measured condition.

@@ -4,8 +4,16 @@
 
 [English](README.md)
 
+harness-bench 는 **하네스** — 모델을 감싸는 루프, 프롬프트, 도구 접근 권한, 정지 조건 —
+를 바꿨을 때 결과가 실제로 얼마나 달라지는지를 재는 측정 장치다. 과제와 인수 테스트는
+어떤 구현보다 먼저 동결되고, 예측은 반증 조건과 함께 사전등록되며, 격리는 실행 전에
+양방향 카나리로 확인된다. 계측기가 숫자를 뒷받침하지 못하면 각주 달린 숫자가 아니라
+`UNQUOTABLE` 또는 `None` 이 나온다.
+
 새 모델이 나오면 한 번 돌려 기존 모델과 같은 표에 얹고 — 점수가 아니라 **그 모델의 운용
-처방**을 받는다.
+처방**을 받는다. 실행 하나가 raw(모든 호출과 응답) · profile(측정된 특성) ·
+prescription(그 특성을 하네스 설정으로 옮긴 것) 셋을 남기고, 처방은 줄마다 근거 등급을
+달고 나온다.
 
 ```
              측정                                  →  결정
@@ -13,33 +21,23 @@
  codex    코드 0.906× 감소 · 일찍 종료               →  루프를 더 돌려도 됨 · 라운드로 상한
 ```
 
-> **모델 순위표가 아니다.** 하네스 설계의 효과를 재는 것이지 모델 능력을 재지 않는다.
-> [`docs/LIMITS.ko.md`](docs/LIMITS.ko.md) 참조.
-
 ## 실험 목록
 
-harness-bench 는 **실험 모음**입니다. `core` 가 측정 기계를 제공하고, 실험 각각이 자기
-과제·프롬프트·오라클·지표·사전등록을 가져옵니다. 현재 실험은 하나입니다:
+harness-bench 는 **실험 모음**이다. `core` 가 측정 기계 — 샌드박스, 러너, 클러스터링,
+사전등록, 통계, 원장 — 를 제공하고 어떤 주제도 알지 못한다. 실험 각각이 자기 과제·프롬프트·
+오라클·지표·사전등록과 자기 `bench-<name>` 스킬을 가져온다. 현재 실험은 하나다:
 
 | # | 실험 | 묻는 질문 | 상태 |
 |---|---|---|---|
-| **1** | [`review_convergence`](harness_bench/experiments/review_convergence) | AI 코드리뷰를 반복하면 수렴하는가? | **공개됨** — 아래 결과 |
+| **1** | [`review_convergence`](harness_bench/experiments/review_convergence) | AI 코드리뷰를 반복하면 수렴하는가? | **공개됨** — [결과](docs/REVIEW-BENCH.ko.md) |
 | 2… | — | — | 아직 없음 |
 
-### 📊 실험 1 — `review_convergence`: AI 코드리뷰를 반복하면 수렴하는가?
+아래 실험 절을 제외한 나머지는 모두 모음 전체에 해당한다 — 어떤 실험을 돌리든 같은 명령,
+같은 산출물, 같은 규율이 적용된다.
 
-**이 모음의 첫 번째 실험입니다. 측정 11개 · 약 400회 모델 호출 · 두 벤더.**
-여기서 시작하십시오:
+### 📊 실험 1 — `review_convergence`
 
-| | |
-|---|---|
-| **[발견 →](docs/FINDINGS.ko.md)** | 측정된 전부, 숫자와 함께 |
-| **[그래서 리뷰를 어떻게 →](docs/PRESCRIPTION.ko.md)** | 측정이 뒷받침하는 레시피 |
-| **[어떻게 측정했는가 →](docs/METHODS.ko.md)** | 계측기 전부와 각각의 검증 |
-| **[장문 서사 →](docs/STUDY-ko.md)** | 초고 전문 (1700줄) |
-| [벤치 설계와 자체 결과 →](docs/REVIEW-BENCH.ko.md) | 재현 가능한 tier-1 실행 |
-
-결과 넷만 먼저 보이면 이렇습니다:
+**측정 11개 · 약 400회 모델 호출 · 두 벤더.** 결과 넷만 먼저 보이면 이렇다:
 
 ```
 리뷰만 반복             진짜 결함 커버리지 34% -> 61% -> 76%, 코드 위험 0
@@ -52,11 +50,28 @@ harness-bench 는 **실험 모음**입니다. `core` 가 측정 기계를 제공
 
 > **리뷰는 여러 번, 수정은 한 번.**
 
-모든 계측기는 쓰이기 전에 검증됩니다 — 격리는 양방향 카나리로, 인수 스위트는 보증을 하나
-지우고 알아채는지 확인해서, 클러스터링은 안정성 게이트와 다른 벤더 모델로, 차등 하네스는
-심어둔 발산으로, 자유 공간 분모는 뮤테이션 테스트로. 계측기가 숫자를 뒷받침할 수 없으면
-각주 달린 숫자가 아니라 `UNQUOTABLE` 또는 `None` 을 반환합니다.
-[`docs/METHODS.ko.md`](docs/METHODS.ko.md)
+| | |
+|---|---|
+| **[발견 →](docs/FINDINGS.ko.md)** | 측정된 전부, 숫자와 함께 |
+| **[그래서 리뷰를 어떻게 →](docs/PRESCRIPTION.ko.md)** | 측정이 뒷받침하는 레시피 |
+| **[어떻게 측정했는가 →](docs/METHODS.ko.md)** | 계측기 전부와 각각의 검증 |
+| [실험 1 전문 →](docs/REVIEW-BENCH.ko.md) | 설계·과제·재현 가능한 tier-1 실행 |
+| [장문 서사 →](docs/STUDY-ko.md) | 초고 전문 |
+
+과제 `retry_policy`, 두 모델, 각 3루프 — 2026-08-21 측정:
+
+| 모델 | 콜 | 비용 | loop_decay | churn | 거절률 | 코드 크기 | 도구 차단 |
+|---|---|---|---|---|---|---|---|
+| claude-opus-5 | 30 | $15.74 | −1.25 | 수렴 안 함 | 0.209 | **1.258×** | 가능 |
+| gpt-5.6-sol | 24 | 미상 | −0.25 | 측정 불가 | 0.273 | **0.906×** | **불가** |
+
+54개 루프 라운드 전체에서 **계약 준수가 매 라운드 유지됐다** — 그러는 동안 리뷰어들은
+이미 23개 인수 테스트를 전부 통과하는 코드에 대해 패스당 3~14건을 계속 보고했다. 전체
+표는 [`results/ledger-review_convergence.md`](results/ledger-review_convergence.md) 이고
+`bench compare` 가 재생성한다.
+
+> **모델 순위표가 아니다.** 특성 값은 하네스 설계의 효과를 재는 것이지 모델 능력을 재지
+> 않는다. 이 벤치로 주장할 수 없는 것: [`docs/LIMITS.ko.md`](docs/LIMITS.ko.md).
 
 ---
 
@@ -64,13 +79,17 @@ harness-bench 는 **실험 모음**입니다. `core` 가 측정 기계를 제공
 
 ```bash
 pip install -e ".[dev]"
-pytest -q                                  # 경계 + 재현 게이트. 모델 호출 없음
+pytest -q                                    # 경계 + 재현 게이트. 모델 호출 없음
 
-bench canary --model claude                # 격리를 양방향으로 먼저 확인
-bench run    --model claude --loops 3
-bench compare                              # 원장 재생성
-bench prescribe --model claude             # 특성 → 운용 처방
+EXP=review_convergence
+bench canary    --exp $EXP --model claude    # 격리를 양방향으로 먼저 확인
+bench run       --exp $EXP --model claude --loops 3
+bench compare   --exp $EXP                   # 그 실험의 원장 재생성
+bench prescribe --exp $EXP --model claude    # 특성 → 운용 처방
 ```
+
+실험이 하나뿐인 동안은 `--exp` 를 생략해도 된다. 두 번째 실험이 들어오면 필수가 된다 —
+명령이 첫 실험의 의미를 조용히 물려받지 않도록.
 
 ## 산출물
 
@@ -120,32 +139,39 @@ ARI 게이트      문턱 미달이면 숫자가 아니라 문자열 UNQUOTABLE 
 
 각각의 근거: [`docs/DESIGN.ko.md`](docs/DESIGN.ko.md) §3.
 
-## 현재 결과
+## 실험 추가하기
 
-실험 1(`review_convergence`), 과제 `retry_policy`, 두 모델, 각 3루프 — 2026-08-21 측정.
+새 실험은 `harness_bench/experiments/` 아래의 패키지다. CLI 가 그것을 발견해 모듈 셋으로
+구동한다 — `core` 도 CLI 도 이 셋의 의미를 알아서는 안 된다:
 
-| 모델 | 콜 | 비용 | loop_decay | churn | 거절률 | 코드 크기 | 도구 차단 |
-|---|---|---|---|---|---|---|---|
-| claude-opus-5 | 30 | $15.74 | −1.25 | 수렴 안 함 | 0.209 | **1.258×** | 가능 |
-| gpt-5.6-sol | 24 | 미상 | −0.25 | 측정 불가 | 0.273 | **0.906×** | **불가** |
+```
+canary.build() / canary.plant(scratch)      양방향 격리 프로브
+run.measure(model, ...) -> Profile          측정
+traits.TRAIT_KEYS / traits.RULES            무엇을 재고, 그것이 무엇을 결정하는가
+```
 
-54개 루프 라운드 전체에서 **계약 준수가 매 라운드 유지됐다** — 그러는 동안 리뷰어들은
-이미 23개 인수 테스트를 전부 통과하는 코드에 대해 패스당 3~14건을 계속 보고했다.
-
-전체 설계와 결과: [`docs/REVIEW-BENCH.ko.md`](docs/REVIEW-BENCH.ko.md)
+여기에 동결된 과제·프롬프트·오라클·사전등록과 자기 `bench-<name>` 스킬을 함께 가져온다.
+[`CONTRIBUTING.ko.md`](CONTRIBUTING.ko.md) 참조.
 
 ## 문서
 
+모음 전체:
+
 | | |
 |---|---|
+| [`docs/DESIGN.ko.md`](docs/DESIGN.ko.md) | 구조와 여섯 규율 |
 | [`docs/METHODS.ko.md`](docs/METHODS.ko.md) | 각 숫자를 어떻게 얻었고 계측기를 어떻게 검증했는가 |
-| [`docs/FINDINGS.ko.md`](docs/FINDINGS.ko.md) | 실험 1에서 측정된 전부, 숫자와 함께 |
-| [`docs/PRESCRIPTION.ko.md`](docs/PRESCRIPTION.ko.md) | 측정이 뒷받침하는 리뷰 레시피 |
-| [`docs/STUDY-ko.md`](docs/STUDY-ko.md) | 장문 서사 초고 |
-| [`docs/DESIGN.ko.md`](docs/DESIGN.ko.md) | harness-bench 구조와 여섯 규율 |
-| [`docs/REVIEW-BENCH.ko.md`](docs/REVIEW-BENCH.ko.md) | 실험 1 전문: 설계·과제·결과 |
 | [`docs/LIMITS.ko.md`](docs/LIMITS.ko.md) | 이 벤치로 주장할 수 없는 것 |
 | [`CONTRIBUTING.ko.md`](CONTRIBUTING.ko.md) | 모델 추가, 실험 추가 |
+
+실험 1 — `review_convergence`:
+
+| | |
+|---|---|
+| [`docs/REVIEW-BENCH.ko.md`](docs/REVIEW-BENCH.ko.md) | 실험 전문: 설계·과제·결과 |
+| [`docs/FINDINGS.ko.md`](docs/FINDINGS.ko.md) | 측정된 전부, 숫자와 함께 |
+| [`docs/PRESCRIPTION.ko.md`](docs/PRESCRIPTION.ko.md) | 측정이 뒷받침하는 리뷰 레시피 |
+| [`docs/STUDY-ko.md`](docs/STUDY-ko.md) | 장문 서사 초고 |
 
 ## 라이선스
 

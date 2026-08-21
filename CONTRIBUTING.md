@@ -28,13 +28,26 @@ tools         declare whether tools can be disabled (`tools_blockable`)
 `tools_blockable=False` is not a footnote. It is a known confound (`docs/LIMITS.md` §4) and
 that adapter's rows are branded.
 
-Then `bench canary --model <name>` must pass. A POS-leg failure means the probe is broken,
-not that isolation worked, and data collected in that state is void.
+Then `bench canary --exp <experiment> --model <name>` must pass. A POS-leg failure means the
+probe is broken, not that isolation worked, and data collected in that state is void.
 
 ## Adding an experiment
 
 `harness_bench/experiments/<name>/` supplying five things: tasks, prompts, oracle, metrics,
-pre-registration.
+pre-registration. It also ships its own `bench-<name>` skill, for the same reason the code is
+split this way.
+
+The CLI discovers the package and drives it through three modules — no other name is imported
+by `bench`, and neither the CLI nor `core` may know what any of them mean:
+
+```
+canary.build() / canary.plant(scratch)      the two-way isolation probe
+run.measure(model, ...) -> Profile          the measurement
+traits.TRAIT_KEYS / traits.RULES            what it measures, and what that decides
+```
+
+Results carry `"<experiment>/<task>"`, so the ledger (`results/ledger-<experiment>.md`) and
+every prescription stay scoped to one experiment's trait vocabulary.
 
 If you need to change `core`, ask first whether core is incomplete or whether the boundary is
 being crossed. `core` may not import `experiments` and may not carry domain vocabulary in

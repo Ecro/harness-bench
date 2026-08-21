@@ -26,7 +26,7 @@ capability. `Config.require()` refuses such a root outright.
 ## 1. Canary — both directions
 
 ```bash
-bench canary --model <name>
+bench canary --exp <experiment> --model <name>
 ```
 
 Read every leg. **If any POS leg fails, stop.**
@@ -36,7 +36,7 @@ undelivered, CLI dead, permission prompt auto-denied. All of them return the sam
 reachable" that perfect isolation returns. Data collected in that state is void.
 
 Diagnose before rerunning. The raw response is saved at
-`~/.cache/harness-bench/canary/<model>/canary.raw.txt` — read it rather than guessing. Causes
+`~/.cache/harness-bench/canary/<experiment>/<model>/canary.raw.txt` — read it rather than guessing. Causes
 are environmental, not behavioural:
 
 - the probe needed tools the run did not grant
@@ -61,7 +61,7 @@ number from that task is quotable.
 ## 3. Run
 
 ```bash
-bench run --model <name> --loops 3
+bench run --exp <experiment> --model <name> --loops 3
 ```
 
 `--loops 3` is the floor for every experiment. Traits whose ratios cluster near a threshold are
@@ -77,8 +77,8 @@ samples and biases the variance being measured.
 ## 4. Ledger and prescription
 
 ```bash
-bench compare
-bench prescribe --model <name>
+bench compare   --exp <experiment>
+bench prescribe --exp <experiment> --model <name>
 ```
 
 Read the caveats block under the table. `EXPLORATORY`, `TOOLS-UNBLOCKABLE` and `COST-UNKNOWN`

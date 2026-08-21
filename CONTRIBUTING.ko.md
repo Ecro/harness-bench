@@ -29,13 +29,25 @@ tools         도구를 끌 수 있는지 선언한다 (`tools_blockable`)
 `tools_blockable=False` 는 각주가 아니다. 알려진 교란이며([`docs/LIMITS.ko.md`](docs/LIMITS.ko.md)
 §4) 그 어댑터의 행에는 낙인이 찍힌다.
 
-그다음 `bench canary --model <name>` 를 통과해야 한다. POS 레그 실패는 격리가 작동한 것이
-아니라 **프로브가 고장난 것**이고, 그 상태에서 모은 데이터는 무효다.
+그다음 `bench canary --exp <experiment> --model <name>` 를 통과해야 한다. POS 레그 실패는
+격리가 작동한 것이 아니라 **프로브가 고장난 것**이고, 그 상태에서 모은 데이터는 무효다.
 
 ## 실험 추가
 
 `harness_bench/experiments/<name>/` 에 다섯 개를 제공한다: 과제 · 프롬프트 · 오라클 · 지표 ·
-사전등록.
+사전등록. 코드를 이렇게 가른 것과 같은 이유로, 자기 `bench-<name>` 스킬도 함께 가져온다.
+
+CLI 가 그 패키지를 발견해 모듈 셋으로 구동한다. `bench` 가 import 하는 이름은 이 셋뿐이고,
+CLI 도 `core` 도 이 셋의 의미를 알아서는 안 된다:
+
+```
+canary.build() / canary.plant(scratch)      양방향 격리 프로브
+run.measure(model, ...) -> Profile          측정
+traits.TRAIT_KEYS / traits.RULES            무엇을 재고, 그것이 무엇을 결정하는가
+```
+
+결과에는 `"<실험>/<과제>"` 가 기록되므로, 원장(`results/ledger-<실험>.md`)과 모든 처방은
+한 실험의 특성 어휘 안에 머문다.
 
 `core` 를 고쳐야 한다면, 코어가 부족한 것인지 경계를 넘으려는 것인지 먼저 물어라. `core` 는
 `experiments` 를 import 할 수 없고 도메인 어휘를 코드에 담을 수 없다.

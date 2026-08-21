@@ -4,8 +4,17 @@
 
 [한국어](README.ko.md)
 
+harness-bench measures what actually changes when you change the **harness** — the loop, the
+prompts, the tool access, the stop condition wrapped around a model. Tasks and acceptance
+suites are frozen before any implementation exists, predictions are pre-registered with their
+falsification conditions, and isolation is verified by a two-way canary before every run.
+Where an instrument cannot support a number, you get `UNQUOTABLE` or `None` — never a number
+with a footnote.
+
 When a new model ships, one run puts it in the same table as the others — and produces the
-**operating prescription** for it, not just a score.
+**operating prescription** for it, not just a score. Each run leaves three artefacts: raw
+(every call and response), profile (the traits measured), and prescription (those traits
+carried into harness settings, every line graded by the strength of its evidence).
 
 ```
              measured                          →  decided
@@ -13,34 +22,24 @@ When a new model ships, one run puts it in the same table as the others — and 
  codex    shrinks code 0.906× · ends early      →  loop may run longer · cap by rounds
 ```
 
-> This is **not a model leaderboard.** It measures harness design, not model capability.
-> See [`docs/LIMITS.md`](docs/LIMITS.md).
-
 ## The experiments
 
-harness-bench is a **suite of experiments**. `core` supplies the measurement machinery; each
-experiment supplies its own tasks, prompts, oracle, metrics and pre-registration. The suite
-currently holds one:
+harness-bench is a **suite of experiments**. `core` supplies the measurement machinery — the
+sandbox, the runner, clustering, pre-registration, statistics, the ledger — and knows nothing
+about any subject matter. Each experiment supplies its own tasks, prompts, oracle, metrics and
+pre-registration, plus its own `bench-<name>` skill. The suite currently holds one:
 
 | # | experiment | question it asks | status |
 |---|---|---|---|
-| **1** | [`review_convergence`](harness_bench/experiments/review_convergence) | Does repeated AI code review converge? | **published** — results below |
+| **1** | [`review_convergence`](harness_bench/experiments/review_convergence) | Does repeated AI code review converge? | **published** — [results](docs/REVIEW-BENCH.md) |
 | 2… | — | — | not yet written |
 
-### 📊 Experiment 1 — `review_convergence`: does repeated AI code review converge?
+Everything below this line is suite-level: the same commands, artefacts and disciplines apply
+to whichever experiment you run.
 
-**The first experiment in the suite. 11 measurements · ~400 model calls · two vendors.**
-Start here:
+### 📊 Experiment 1 — `review_convergence`
 
-| | |
-|---|---|
-| **[Findings →](docs/FINDINGS.md)** | every measurement, with the numbers |
-| **[So how should you review? →](docs/PRESCRIPTION.md)** | the recipe the measurements support |
-| **[How it was measured →](docs/METHODS.md)** | every instrument, and how each was validated |
-| [Benchmark design and its own results →](docs/REVIEW-BENCH.md) | the reproducible tier-1 runs |
-| [Long-form write-up (Korean) →](docs/STUDY-ko.md) | the narrative version |
-
-Four of the results, to give the shape of it:
+**11 measurements · ~400 model calls · two vendors.** Four of the results, to give the shape:
 
 ```
 review only, repeated       real-defect coverage 34% -> 61% -> 76%, code risk zero
@@ -53,12 +52,28 @@ repository access           those false positives drop to 0%, in BOTH vendors' m
 
 > **Review many times. Fix once.**
 
-Every instrument is validated before use — the isolation by a two-way canary, the acceptance
-suite by deleting a guarantee and checking it notices, the clustering by a stability gate and
-a second vendor's model, the differential harness by planted divergences, the free-space
-denominator by mutation testing. Where an instrument cannot support a number, it returns
-`UNQUOTABLE` or `None` rather than a number with a footnote. See
-[`docs/METHODS.md`](docs/METHODS.md).
+| | |
+|---|---|
+| **[Findings →](docs/FINDINGS.md)** | every measurement, with the numbers |
+| **[So how should you review? →](docs/PRESCRIPTION.md)** | the recipe the measurements support |
+| **[How it was measured →](docs/METHODS.md)** | every instrument, and how each was validated |
+| [Experiment 1 in full →](docs/REVIEW-BENCH.md) | design, tasks, and the reproducible tier-1 runs |
+| [Long-form write-up (Korean) →](docs/STUDY-ko.md) | the narrative version |
+
+Task `retry_policy`, two models, three loops each — measured 2026-08-21:
+
+| model | calls | cost | loop_decay | churn | rejection | code size | tools blockable |
+|---|---|---|---|---|---|---|---|
+| claude-opus-5 | 30 | $15.74 | −1.25 | does not converge | 0.209 | **1.258×** | yes |
+| gpt-5.6-sol | 24 | n/a | −0.25 | not measurable | 0.273 | **0.906×** | **no** |
+
+Across 54 loop rounds, **contract compliance held in every single round** — while reviewers
+kept reporting 3–14 findings per pass on code that already passes all 23 acceptance tests.
+The full table is [`results/ledger-review_convergence.md`](results/ledger-review_convergence.md),
+regenerated by `bench compare`.
+
+> This is **not a model leaderboard.** Trait values measure the effect of harness design, not
+> model capability. What this bench cannot claim: [`docs/LIMITS.md`](docs/LIMITS.md).
 
 ---
 
@@ -66,13 +81,17 @@ denominator by mutation testing. Where an instrument cannot support a number, it
 
 ```bash
 pip install -e ".[dev]"
-pytest -q                                  # boundary + reproduction gates, no model calls
+pytest -q                                    # boundary + reproduction gates, no model calls
 
-bench canary --model claude                # verify isolation in both directions first
-bench run    --model claude --loops 3
-bench compare                              # regenerate the ledger
-bench prescribe --model claude             # traits → operating prescription
+EXP=review_convergence
+bench canary    --exp $EXP --model claude    # verify isolation in both directions first
+bench run       --exp $EXP --model claude --loops 3
+bench compare   --exp $EXP                   # regenerate that experiment's ledger
+bench prescribe --exp $EXP --model claude    # traits → operating prescription
 ```
+
+`--exp` may be omitted while the suite holds a single experiment; the second one makes it
+required, rather than letting a command silently inherit the first one's meaning.
 
 ## What it produces
 
@@ -122,33 +141,39 @@ environment      scratch under /tmp is refused; resolved model ids are recorded,
 
 Rationale for each: [`docs/DESIGN.md`](docs/DESIGN.md) §3.
 
-## Current results
+## Adding an experiment
 
-Experiment 1 (`review_convergence`), task `retry_policy`, two models, three loops each —
-measured 2026-08-21.
+A new experiment is a package under `harness_bench/experiments/`. The CLI discovers it and
+drives it through three modules — nothing in `core` or the CLI may know what they mean:
 
-| model | calls | cost | loop_decay | churn | rejection | code size | tools blockable |
-|---|---|---|---|---|---|---|---|
-| claude-opus-5 | 30 | $15.74 | −1.25 | does not converge | 0.209 | **1.258×** | yes |
-| gpt-5.6-sol | 24 | n/a | −0.25 | not measurable | 0.273 | **0.906×** | **no** |
+```
+canary.build() / canary.plant(scratch)      the two-way isolation probe
+run.measure(model, ...) -> Profile          the measurement
+traits.TRAIT_KEYS / traits.RULES            what it measures, and what that decides
+```
 
-Across 54 loop rounds, **contract compliance held in every single round** — while reviewers
-kept reporting 3–14 findings per pass on code that already passes all 23 acceptance tests.
-
-Full design and results: [`docs/REVIEW-BENCH.md`](docs/REVIEW-BENCH.md)
+It also ships its own frozen tasks, prompts, oracle, pre-registration and `bench-<name>` skill.
+See [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## Documentation
 
+The suite:
+
 | | |
 |---|---|
+| [`docs/DESIGN.md`](docs/DESIGN.md) | architecture and the six disciplines |
 | [`docs/METHODS.md`](docs/METHODS.md) | how each number was obtained and each instrument validated |
-| [`docs/FINDINGS.md`](docs/FINDINGS.md) | every measurement from experiment 1, with the numbers |
-| [`docs/PRESCRIPTION.md`](docs/PRESCRIPTION.md) | the review recipe the measurements support |
-| [`docs/STUDY-ko.md`](docs/STUDY-ko.md) | long-form narrative write-up (Korean) |
-| [`docs/DESIGN.md`](docs/DESIGN.md) | harness-bench architecture and the six disciplines |
-| [`docs/REVIEW-BENCH.md`](docs/REVIEW-BENCH.md) | experiment 1 in full: design, tasks, results |
 | [`docs/LIMITS.md`](docs/LIMITS.md) | what this benchmark does not support |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | adding a model, adding an experiment |
+
+Experiment 1 — `review_convergence`:
+
+| | |
+|---|---|
+| [`docs/REVIEW-BENCH.md`](docs/REVIEW-BENCH.md) | the experiment in full: design, tasks, results |
+| [`docs/FINDINGS.md`](docs/FINDINGS.md) | every measurement, with the numbers |
+| [`docs/PRESCRIPTION.md`](docs/PRESCRIPTION.md) | the review recipe the measurements support |
+| [`docs/STUDY-ko.md`](docs/STUDY-ko.md) | long-form narrative write-up (Korean) |
 
 ## License
 
