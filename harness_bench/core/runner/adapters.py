@@ -76,9 +76,14 @@ class ClaudeAdapter(Adapter):
             if e.get("type") == "result":
                 u = e.get("usage") or {}
                 mu = e.get("modelUsage") or {}
+                # modelUsage 에는 보조 모델이 함께 들어온다 (관측: haiku 가 23 토큰짜리
+                # 부수 작업으로 섞였고, 사전순으로 앞이라 첫 키를 집으면 그게 잡힌다).
+                # 주 모델은 **출력 토큰이 가장 많은 것**이다. 해석된 모델 id 는 재현성의
+                # 근거이므로 여기서 틀리면 원장 전체가 잘못된 모델을 가리킨다.
+                main = max(mu, key=lambda k: (mu[k] or {}).get("outputTokens", 0), default=None)
                 return (
                     e.get("result") or "",
-                    next(iter(mu), None),
+                    main,
                     Usage(
                         input_tokens=u.get("input_tokens"),
                         output_tokens=u.get("output_tokens"),

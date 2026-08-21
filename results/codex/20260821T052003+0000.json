@@ -1,0 +1,84 @@
+{
+  "model": "codex",
+  "model_version": "gpt-5.6-sol",
+  "experiment": "review_convergence/retry_policy",
+  "traits": {
+    "spread": {
+      "key": "spread",
+      "value": 2,
+      "unit": "",
+      "note": "n=5 [5, 4, 3, 4, 4]",
+      "degraded": false
+    },
+    "loop_decay": {
+      "key": "loop_decay",
+      "value": -4.0,
+      "unit": "",
+      "note": "[4, 0]",
+      "degraded": false
+    },
+    "churn_dries": {
+      "key": "churn_dries",
+      "value": null,
+      "unit": "",
+      "note": "[44]",
+      "degraded": true
+    },
+    "rejection_rate": {
+      "key": "rejection_rate",
+      "value": 0.0,
+      "unit": "",
+      "note": "0/4",
+      "degraded": false
+    },
+    "malformed_rate": {
+      "key": "malformed_rate",
+      "value": 0.0,
+      "unit": "",
+      "note": "",
+      "degraded": false
+    },
+    "ac_held": {
+      "key": "ac_held",
+      "value": true,
+      "unit": "",
+      "note": "",
+      "degraded": false
+    },
+    "loc_direction": {
+      "key": "loc_direction",
+      "value": 1.016,
+      "unit": "×",
+      "note": "",
+      "degraded": false
+    },
+    "tools_blockable": {
+      "key": "tools_blockable",
+      "value": false,
+      "unit": "",
+      "note": "",
+      "degraded": false
+    },
+    "finds_per_call": {
+      "key": "finds_per_call",
+      "value": null,
+      "unit": "",
+      "note": "tier-2 전용 (판정된 결함 집합 필요)",
+      "degraded": true
+    },
+    "verbosity_shift": {
+      "key": "verbosity_shift",
+      "value": null,
+      "unit": "",
+      "note": "tier-2 전용 (리포 접근 대비 필요)",
+      "degraded": true
+    }
+  },
+  "exploratory": true,
+  "prereg_sha256": null,
+  "tools_blockable": false,
+  "total_calls": 8,
+  "total_cost_usd": null,
+  "total_tokens": 175790,
+  "created_at": "2026-08-21T05:20:03+00:00"
+}

@@ -22,7 +22,8 @@ from ...core.ledger.profile import Rule
 TRAIT_KEYS = {
     "spread":            ("tier-1", "같은 코드를 N회 리뷰했을 때 지적 수의 범위 (max-min)"),
     "loop_decay":        ("tier-1", "루프 라운드가 갈수록 지적이 주는가 (선형 기울기)"),
-    "churn_dries":       ("tier-1", "라운드별 churn 이 0 으로 수렴하는가"),
+    "churn_dries":       ("tier-1", "churn 후반부 평균이 전반부의 0.7 미만인가 (4점 이상일 때만)"),
+    "churn_ratio":       ("tier-1", "churn 후반부 평균 / 전반부 평균"),
     "rejection_rate":    ("tier-1", "수정자로 썼을 때 지적을 거절하는 비율"),
     "malformed_rate":    ("tier-1", "JSON 강제에도 파싱 불가한 응답 비율"),
     "ac_held":           ("tier-1", "루프 전 라운드에서 계약 준수가 유지됐는가"),

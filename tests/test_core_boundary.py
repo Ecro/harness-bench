@@ -105,3 +105,19 @@ def test_canary_declares_its_own_tools():
     c = Canary("p", [Leg("a", "POS", lambda d: True), Leg("b", "NEG", lambda d: True)])
     assert c.needs_tools, "카나리가 도구를 선언하지 않는다"
     assert {"Read", "Write"} <= c.needs_tools
+
+
+def test_resolved_model_id_picks_the_main_model():
+    """modelUsage 에는 보조 모델이 섞여 들어온다.
+
+    실측: 한 호출의 modelUsage 가 {haiku: 23 out, opus: 13263 out} 이었고, 첫 키를
+    집는 구현은 원장에 haiku 를 적었다. 해석된 모델 id 는 재현성의 근거이므로 여기서
+    틀리면 6개월 뒤 "어느 모델의 수치인가" 를 가릴 수 없다.
+    """
+    import json
+    from harness_bench.core.runner.adapters import ClaudeAdapter
+    mu = {"claude-haiku-4-5-20251001": {"outputTokens": 23},
+          "claude-opus-5": {"outputTokens": 13263}}
+    blob = json.dumps([{"type": "result", "result": "x",
+                        "usage": {"input_tokens": 1, "output_tokens": 2}, "modelUsage": mu}])
+    assert ClaudeAdapter().parse(blob)[1] == "claude-opus-5"

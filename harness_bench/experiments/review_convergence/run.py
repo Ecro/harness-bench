@@ -39,6 +39,19 @@ def _compose_fix(spec: str, module: str, findings: list) -> str:
             + json.dumps(findings, indent=2, ensure_ascii=False) + "\n")
 
 
+def _dries(churns: list[int]) -> bool | None:
+    r = _ratio(churns)
+    return None if r is None else r < 0.7
+
+
+def _ratio(churns: list[int]) -> float | None:
+    if len(churns) < 4:
+        return None          # 4점 미만에서 추세를 말하는 것은 잡음을 읽는 것이다
+    h = len(churns) // 2
+    first = sum(churns[:h]) / h
+    return round(sum(churns[-h:]) / h / first, 3) if first else None
+
+
 def _churn(a: str, b: str) -> int:
     d = list(difflib.unified_diff(a.splitlines(), b.splitlines(), n=0))
     return sum(1 for l in d if l[:1] in "+-" and l[:3] not in ("+++", "---"))
@@ -113,9 +126,12 @@ def measure(adapter_name: str, task_slug: str = "retry_policy", *,
         "loop_decay": T("loop_decay",
                         round((round_counts[-1] - round_counts[0]) / (len(round_counts) - 1), 2)
                         if len(round_counts) > 1 else None, note=str(round_counts)),
-        "churn_dries": T("churn_dries",
-                         (churns[-1] < churns[0] / 2) if len(churns) > 1 else None,
-                         note=str(churns)),
+        # 마지막 값 하나로 판정하지 않는다. churn 계열은 시끄럽고([70,58,27,46,33]),
+        # 마지막-대-처음 비교는 잡음 하나에 뒤집힌다. 전반부 평균 대 후반부 평균으로
+        # 보고, 4점 미만이면 아예 판정하지 않는다(None).
+        "churn_dries": T("churn_dries", _dries(churns), note=str(churns)),
+        "churn_ratio": T("churn_ratio", _ratio(churns), "후/전",
+                         note="후반부 평균 / 전반부 평균"),
         "rejection_rate": T("rejection_rate",
                             round(dec_rej / dec_total, 3) if dec_total else None,
                             note=f"{dec_rej}/{dec_total}"),
