@@ -249,12 +249,11 @@ That gave the study one of its central lessons:
 
 Excluding the false positives, one review's real-defect coverage is not 44% but **34%**.
 
-```text
-                  all 14      the 10 real
-1 review            44%           34%
-3 reviews           71%           61%
-5 reviews           83%           76%
-```
+| Reviews | Against all 14 distinct groups | Against the 10 adjudicated real defects |
+|---|---:|---:|
+| 1 | 44% | 34% |
+| 3 | 71% | 61% |
+| 5 | 83% | 76% |
 
 So the accurate sentence for this data is:
 
@@ -397,6 +396,8 @@ Show it to a reviewer anyway, and the findings keep coming.
 ### Claude
 
 ```text
+findings per round (7 runs per condition)
+
 bare prompt:
 5, 5, 6, 8, 7, 8, 6
 median 6
@@ -431,6 +432,8 @@ Passing every test does not mean there is nothing to review.
 The same code and the same bare prompt went to codex.
 
 ```text
+findings per round (7 runs per condition)
+
 claude bare
 5, 5, 6, 8, 7, 8, 6
 
@@ -847,11 +850,10 @@ So exactly one thing was changed.
 
 ## 14.1 Claude's result
 
-```text
-                findings   distinct   real   false
-file only            61        14      10      4
-repo access          30         7       7      0
-```
+| Condition | Raw findings | Distinct groups | Real defects | False positives |
+|---|---:|---:|---:|---:|
+| File only | 61 | 14 | 10 | 4 |
+| Repo access | 30 | 7 | 7 | 0 |
 
 All four false positives vanished.
 
@@ -944,11 +946,12 @@ So my first thought was:
 
 The 2×2 rejected that hypothesis.
 
-```text
-                   contract     no contract
-C firmware          3/4 broke     4/4 broke
-Python              0/40          0/5
-```
+Each cell is **rounds where an acceptance test broke / rounds run in that condition**.
+
+| Task | Contract | No contract |
+|---|---:|---:|
+| C firmware | 3 / 4 | 4 / 4 |
+| Python | 0 / 40 | 0 / 5 |
 
 Fisher exact test:
 
@@ -1075,6 +1078,8 @@ Everything except the final human triage:
 On compliance the result was good.
 
 ```text
+RED = a round where an acceptance test broke (broken rounds / rounds run)
+
 original file-only loop
 RED 12 / 15
 
